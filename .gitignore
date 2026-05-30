@@ -1,0 +1,20 @@
+# Maven
+target/
+*.class
+
+# ローカル設定（DB接続情報等）
+src/main/resources/application-local.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+
+# ログ
+*.log
+
+# Claude memory（プロジェクト設定はバージョン管理対象外）
+.claude/memory/

@@ -1,0 +1,85 @@
+/* Bukuro - アプリ共通スタイル */
+
+body {
+    background-color: #fafafa;
+    color: #333;
+}
+
+.navbar-brand {
+    font-size: 1.4rem;
+    color: #111 !important;
+}
+
+/* フォーム */
+.form-control:focus {
+    border-color: #888;
+    box-shadow: 0 0 0 0.2rem rgba(0, 0, 0, 0.08);
+}
+
+/* カード */
+.card {
+    border-radius: 0.5rem;
+}
+
+/* フッター */
+footer {
+    color: #999;
+}
+
+/* ヒーロー（ログアウト時） */
+.hero-section {
+    min-height: calc(100vh - 56px);
+    display: flex;
+    align-items: center;
+    padding: 4rem 0;
+}
+
+.hero-eyebrow {
+    font-size: 0.72rem;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: #aaa;
+    margin-bottom: 2rem;
+}
+
+.hero-title {
+    font-size: clamp(2.4rem, 5vw, 3.5rem);
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1.2;
+    color: #111;
+    margin-bottom: 1.5rem;
+}
+
+.hero-body {
+    color: #777;
+    font-size: 1rem;
+    line-height: 1.8;
+    margin-bottom: 2.5rem;
+}
+
+.hero-cta {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1.75rem;
+    flex-wrap: wrap;
+}
+
+.hero-btn-primary {
+    padding: 0.65rem 2.5rem;
+    border-radius: 2rem;
+    font-size: 0.95rem;
+    font-weight: 500;
+}
+
+.hero-link-secondary {
+    color: #888;
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: color 0.15s;
+}
+
+.hero-link-secondary:hover {
+    color: #333;
+}

@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mvn test *)",
+      "Skill(steering)",
+      "Bash(mvn compile *)",
+      "Bash(xargs cat -n)",
+      "WebFetch(domain:developers.google.com)",
+      "WebFetch(domain:ndlsearch.ndl.go.jp)",
+      "WebFetch(domain:openbd.jp)",
+      "Bash(curl -s \"https://iss.ndl.go.jp/api/opensearch?title=%E7%8C%AB&cnt=3&mediatype=1\")",
+      "Bash(curl -v --max-time 5 \"https://iss.ndl.go.jp/api/opensearch?title=%E7%8C%AB&cnt=3&mediatype=1\")",
+      "Bash(curl -L --max-time 8 \"https://iss.ndl.go.jp/api/opensearch?title=%E7%8C%AB&cnt=3&mediatype=1\")",
+      "Bash(curl *)",
+      "Bash(xargs ls -la)",
+      "Bash(xargs ls)",
+      "Bash(./mvnw test *)",
+      "Bash(mvn -version)",
+      "Bash(python3 -m json.tool)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); r=d[0]; print\\('cover:', r['summary'].get\\('cover'\\)\\); print\\('isbn:', r['summary'].get\\('isbn'\\)\\); print\\('title:', r['summary'].get\\('title'\\)\\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); r=d[0]; print\\(json.dumps\\(r['summary'], ensure_ascii=False, indent=2\\)\\)\")",
+      "Bash(xargs cat)"
+    ]
+  }
+}

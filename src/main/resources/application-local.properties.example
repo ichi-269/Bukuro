@@ -1,0 +1,27 @@
+# ローカル開発用設定（このファイルをコピーして application-local.properties を作成）
+# application-local.properties は .gitignore で除外されている
+
+spring.datasource.url=jdbc:mysql://localhost:3306/bukuro_dev?useSSL=false&serverTimezone=Asia/Tokyo&characterEncoding=UTF-8
+spring.datasource.username=bukuro
+spring.datasource.password=password
+
+# ローカル開発用: DDLを自動生成（本番では validate）
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+
+# DDL作成SQL（初回セットアップ時に実行）
+# CREATE DATABASE bukuro_dev CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+# CREATE USER 'bukuro'@'localhost' IDENTIFIED BY 'password';
+# GRANT ALL ON bukuro_dev.* TO 'bukuro'@'localhost';
+#
+# CREATE TABLE users (
+#     id BIGINT NOT NULL AUTO_INCREMENT,
+#     username VARCHAR(50) NOT NULL,
+#     email VARCHAR(255) NOT NULL,
+#     password VARCHAR(255) NOT NULL,
+#     bio TEXT,
+#     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+#     PRIMARY KEY (id),
+#     UNIQUE KEY uk_users_username (username),
+#     UNIQUE KEY uk_users_email (email)
+# ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
