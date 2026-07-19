@@ -1,29 +1,27 @@
 package com.bukuro.controller;
 
+import com.bukuro.dto.ErrorResponse;
+import com.bukuro.dto.MeDto;
 import com.bukuro.dto.RegisterForm;
 import com.bukuro.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Controller;
-import org.springframework.ui.Model;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 
-@Controller
+@RestController
+@RequestMapping("/api")
 @RequiredArgsConstructor
 public class AuthController {
 
     private final UserService userService;
 
-    @GetMapping("/register")
-    public String registerForm(Model model) {
-        model.addAttribute("registerForm", new RegisterForm());
-        return "auth/register";
-    }
-
     @PostMapping("/register")
-    public String register(@Valid @ModelAttribute("registerForm") RegisterForm form,
-                           BindingResult result) {
+    public ResponseEntity<?> register(@Valid @RequestBody RegisterForm form, BindingResult result) {
         // @Validエラーがない場合のみDB重複チェックとパスワード確認を実行
         if (!result.hasErrors()) {
             if (!form.isPasswordConfirmed()) {
@@ -38,15 +36,29 @@ public class AuthController {
         }
 
         if (result.hasErrors()) {
-            return "auth/register";
+            var fieldErrors = result.getFieldErrors().stream()
+                    .map(fieldError -> ErrorResponse.FieldErrorItem.builder()
+                            .field(fieldError.getField())
+                            .message(fieldError.getDefaultMessage())
+                            .build())
+                    .toList();
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ErrorResponse.builder()
+                    .status(HttpStatus.BAD_REQUEST.value())
+                    .code("VALIDATION_ERROR")
+                    .message("入力内容に誤りがあります")
+                    .fieldErrors(fieldErrors)
+                    .build());
         }
 
-        userService.register(form);
-        return "redirect:/login?registered=true";
+        MeDto created = MeDto.from(userService.register(form));
+        return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
-    @GetMapping("/login")
-    public String loginForm() {
-        return "auth/login";
+    @GetMapping("/me")
+    public ResponseEntity<MeDto> me(@AuthenticationPrincipal UserDetails principal) {
+        if (principal == null) {
+            return ResponseEntity.ok().body(null);
+        }
+        return ResponseEntity.ok(MeDto.from(userService.getUserByEmail(principal.getUsername())));
     }
 }

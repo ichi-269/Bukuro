@@ -1,27 +1,28 @@
 package com.bukuro.controller;
 
+import com.bukuro.dto.IsbnRequest;
+import com.bukuro.dto.ShelfEntryDto;
+import com.bukuro.dto.ShelfStatusUpdateRequest;
 import com.bukuro.entity.Post;
 import com.bukuro.entity.ReadingRecord;
 import com.bukuro.entity.ReadingRecord.ReadingStatus;
-import com.bukuro.exception.BookNotFoundException;
-import com.bukuro.exception.DuplicateRecordException;
-import com.bukuro.exception.ExternalApiException;
 import com.bukuro.service.PostService;
 import com.bukuro.service.ShelfService;
 import com.bukuro.service.UserService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.stereotype.Controller;
-import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-@Controller
+@RestController
+@RequestMapping("/api/shelf")
 @RequiredArgsConstructor
 public class ShelfController {
 
@@ -29,41 +30,18 @@ public class ShelfController {
     private final UserService userService;
     private final PostService postService;
 
-    @PostMapping("/books/add")
-    public String add(@RequestParam String isbn,
-                      @AuthenticationPrincipal UserDetails principal,
-                      RedirectAttributes redirectAttributes) {
+    @PostMapping
+    public ResponseEntity<ShelfEntryDto> add(@Valid @RequestBody IsbnRequest request,
+                                             @AuthenticationPrincipal UserDetails principal) {
         Long userId = getUserId(principal);
-        try {
-            shelfService.addToShelf(userId, isbn);
-            return "redirect:/shelf";
-        } catch (DuplicateRecordException e) {
-            redirectAttributes.addFlashAttribute("errorMessage", e.getMessage());
-            return "redirect:/shelf";
-        } catch (BookNotFoundException e) {
-            redirectAttributes.addFlashAttribute("errorMessage",
-                    "この書籍はOpenBDに登録されていません。ISBNを確認してください。");
-            return "redirect:/books/search";
-        } catch (ExternalApiException e) {
-            redirectAttributes.addFlashAttribute("errorMessage", e.getMessage());
-            return "redirect:/books/search";
-        }
+        ReadingRecord record = shelfService.addToShelf(userId, request.getIsbn());
+        return ResponseEntity.status(HttpStatus.CREATED).body(ShelfEntryDto.from(record, null));
     }
 
-    @GetMapping("/shelf")
-    public String shelf(@AuthenticationPrincipal UserDetails principal, Model model) {
+    @GetMapping
+    public Map<String, List<ShelfEntryDto>> shelf(@AuthenticationPrincipal UserDetails principal) {
         Long userId = getUserId(principal);
         List<ReadingRecord> records = shelfService.getShelf(userId);
-
-        model.addAttribute("wantToRead",
-                records.stream().filter(r -> r.getStatus() == ReadingStatus.WANT_TO_READ)
-                        .collect(Collectors.toList()));
-        model.addAttribute("reading",
-                records.stream().filter(r -> r.getStatus() == ReadingStatus.READING)
-                        .collect(Collectors.toList()));
-        model.addAttribute("done",
-                records.stream().filter(r -> r.getStatus() == ReadingStatus.DONE)
-                        .collect(Collectors.toList()));
 
         Map<Long, Long> postIdByBookId = postService.findByUserId(userId).stream()
                 .collect(Collectors.toMap(
@@ -71,35 +49,38 @@ public class ShelfController {
                         Post::getId,
                         (existing, newer) -> existing
                 ));
-        model.addAttribute("postIdByBookId", postIdByBookId);
 
-        return "shelf/index";
+        return Map.of(
+                "wantToRead", toDtoList(records, ReadingStatus.WANT_TO_READ, postIdByBookId),
+                "reading", toDtoList(records, ReadingStatus.READING, postIdByBookId),
+                "done", toDtoList(records, ReadingStatus.DONE, postIdByBookId)
+        );
     }
 
-    @PostMapping("/shelf/{recordId}/status")
-    public String updateStatus(@PathVariable Long recordId,
-                               @RequestParam String status,
-                               @AuthenticationPrincipal UserDetails principal,
-                               RedirectAttributes redirectAttributes) {
-        ReadingStatus readingStatus;
-        try {
-            readingStatus = ReadingStatus.valueOf(status);
-        } catch (IllegalArgumentException e) {
-            redirectAttributes.addFlashAttribute("errorMessage", "無効なステータスです");
-            return "redirect:/shelf";
-        }
+    @PatchMapping("/{recordId}")
+    public ShelfEntryDto updateStatus(@PathVariable Long recordId,
+                                      @Valid @RequestBody ShelfStatusUpdateRequest request,
+                                      @AuthenticationPrincipal UserDetails principal) {
+        ReadingStatus readingStatus = ReadingStatus.valueOf(request.getStatus());
         Long userId = getUserId(principal);
-        shelfService.updateStatus(recordId, readingStatus, userId);
-        return "redirect:/shelf";
+        ReadingRecord record = shelfService.updateStatus(recordId, readingStatus, userId);
+        return ShelfEntryDto.from(record, null);
     }
 
-    @PostMapping("/shelf/{recordId}/delete")
-    public String delete(@PathVariable Long recordId,
-                         @AuthenticationPrincipal UserDetails principal,
-                         RedirectAttributes redirectAttributes) {
+    @DeleteMapping("/{recordId}")
+    public ResponseEntity<Void> delete(@PathVariable Long recordId,
+                                       @AuthenticationPrincipal UserDetails principal) {
         Long userId = getUserId(principal);
         shelfService.remove(recordId, userId);
-        return "redirect:/shelf";
+        return ResponseEntity.noContent().build();
+    }
+
+    private List<ShelfEntryDto> toDtoList(List<ReadingRecord> records, ReadingStatus status,
+                                          Map<Long, Long> postIdByBookId) {
+        return records.stream()
+                .filter(r -> r.getStatus() == status)
+                .map(r -> ShelfEntryDto.from(r, postIdByBookId.get(r.getBook().getId())))
+                .collect(Collectors.toList());
     }
 
     private Long getUserId(UserDetails principal) {

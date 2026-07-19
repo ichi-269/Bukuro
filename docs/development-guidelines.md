@@ -137,20 +137,22 @@ public Post findPublicPost(Long postId) {
 }
 ```
 
-**Spring `@ControllerAdvice` で一元ハンドリング**:
+**Spring `@RestControllerAdvice` で一元ハンドリング（構造化JSONエラーを返却）**:
 
 ```java
-@ControllerAdvice
+@RestControllerAdvice
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(ResourceNotFoundException.class)
-    public String handleNotFound(Model model) {
-        return "error/404";
+    public ResponseEntity<ErrorResponse> handleNotFound(ResourceNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.builder().status(404).code("RESOURCE_NOT_FOUND").message(ex.getMessage()).build());
     }
 
     @ExceptionHandler(AccessDeniedException.class)
-    public String handleForbidden() {
-        return "error/403";
+    public ResponseEntity<ErrorResponse> handleForbidden(AccessDeniedException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ErrorResponse.builder().status(403).code("ACCESS_DENIED").message(ex.getMessage()).build());
     }
 }
 ```
@@ -184,14 +186,14 @@ private String dbPassword;  // application.properties → 環境変数で解決
 private String dbPassword = "secret123";  // 絶対にしない
 ```
 
-**ThymeleafのHTMLエスケープを必ず使う**:
+**Vueテンプレートのデフォルトエスケープを必ず使う**:
 
 ```html
-<!-- ✅ 良い例: th:text は自動エスケープ（XSS対策） -->
-<p th:text="${post.body}"></p>
+<!-- ✅ 良い例: テンプレート補間 {{ }} は自動エスケープ（XSS対策） -->
+<p>{{ post.body }}</p>
 
-<!-- ❌ 悪い例: th:utext はエスケープなし（XSS脆弱性） -->
-<p th:utext="${post.body}"></p>  <!-- ユーザー入力には使わない -->
+<!-- ❌ 悪い例: v-html はエスケープなし（XSS脆弱性） -->
+<p v-html="post.body"></p>  <!-- ユーザー入力には使わない -->
 ```
 
 ---
@@ -201,38 +203,85 @@ private String dbPassword = "secret123";  // 絶対にしない
 **Controllerは薄く保つ（ビジネスロジックをServiceへ）**:
 
 ```java
-// ✅ 良い例: Controllerはルーティングのみ
+// ✅ 良い例: Controllerはルーティング + DTO変換のみ
 @PostMapping("/posts")
-public String createPost(@Valid PostForm form, BindingResult result,
-                         @AuthenticationPrincipal UserDetails user) {
-    if (result.hasErrors()) {
-        return "post/new";
-    }
-    Long userId = ((CustomUserDetails) user).getUserId();
-    Post post = postService.create(userId, form);
-    return "redirect:/posts/" + post.getId();
+public ResponseEntity<PostDto> createPost(@RequestParam Long bookId,
+                                          @Valid @RequestBody PostForm form,
+                                          @AuthenticationPrincipal UserDetails principal) {
+    Long userId = userService.getUserByEmail(principal.getUsername()).getId();
+    Post post = postService.create(userId, bookId, form);
+    return ResponseEntity.status(HttpStatus.CREATED).body(PostDto.from(post));
 }
 
 // ❌ 悪い例: Controllerにビジネスロジック
 @PostMapping("/posts")
-public String createPost(PostForm form, @AuthenticationPrincipal UserDetails user) {
+public ResponseEntity<PostDto> createPost(@RequestBody PostForm form, @AuthenticationPrincipal UserDetails user) {
     // 重複チェック、ドメインロジックをControllerに書かない
     if (postRepository.existsByUserIdAndBookId(...)) { ... }
 }
 ```
 
-**JPAエンティティをViewに直接渡さない（DTOに変換する）**:
+**JPAエンティティをレスポンスに直接返さない（DTOに変換する）**:
 
 ```java
-// ✅ 良い例: Service でDTO変換
+// ✅ 良い例: DTOに変換してから返す
 public PostDto findPostById(Long postId, Long currentUserId) {
     Post post = postRepository.findById(postId)...;
     boolean hasGooded = goodRepository.existsByUserIdAndPostId(currentUserId, postId);
     return PostDto.from(post, hasGooded);
 }
 
-// ❌ 悪い例: エンティティをそのままModelに追加（遅延ロードの問題・過剰情報の露出）
-model.addAttribute("post", postRepository.findById(id).orElseThrow());
+// ❌ 悪い例: エンティティをそのままレスポンスに返す（遅延ロードの問題・過剰情報の露出）
+@GetMapping("/posts/{id}")
+public Post show(@PathVariable Long id) {
+    return postRepository.findById(id).orElseThrow(); // password等のフィールドが意図せずJSON化されるリスク
+}
+```
+
+---
+
+## フロントエンド（Vue / TypeScript）の規約
+
+命名規則（ファイル・コンポーネント名等）は`docs/repository-structure.md`を参照。ここではコンポーネント設計・状態管理・API通信の方針のみ記載する。
+
+### コンポーネント設計
+
+- 1ルート = 1ビューコンポーネント（`views/[機能名]/[画面名]View.vue`）。複数ページで使い回すUI要素のみ`components/`に切り出す
+- ビジネスロジック（バリデーション・所有権に基づく表示分岐等）はコンポーネント内かAPIレスポンスのフラグ（`isOwner`等）に委譲し、独自の権限判定ロジックをフロントエンド側で新たに作らない（バックエンドのServiceレイヤーが真実の情報源）
+- `<script setup lang="ts">` + Composition APIを標準とする
+
+```vue
+<!-- ✅ 良い例: 型付きpropsとAPIレスポンスの型をそのまま利用 -->
+<script setup lang="ts">
+import type { Post } from '../../types'
+defineProps<{ post: Post }>()
+</script>
+
+<!-- ❌ 悪い例: any型でAPIレスポンスを受け取る -->
+<script setup lang="ts">
+defineProps<{ post: any }>()
+</script>
+```
+
+### 状態管理（Pinia）
+
+- アプリ全体で共有が必要な状態（現在ログイン中のユーザー等）のみPiniaストアに置く。ページ固有の状態（フォーム入力値等）はコンポーネントローカルの`ref`/`reactive`で持つ
+- ストアからAPIを直接呼び出す場合は`api/`配下のモジュールを経由する（コンポーネントから`axios`を直接importしない）
+
+### API通信
+
+- エンドポイントごとに`api/[リソース名].ts`を作成し、コンポーネントは`axios`ではなくこのモジュール経由で呼び出す
+- レスポンス/エラーの型は`types/index.ts`のバックエンドDTO対応インターフェースを使用し、`any`は使わない
+
+```typescript
+// ✅ 良い例: api/posts.ts に集約
+export function getPost(postId: number) {
+  return client.get<Post>(`/posts/${postId}`).then((res) => res.data)
+}
+
+// ❌ 悪い例: コンポーネント内で直接axiosを呼ぶ
+import axios from 'axios'
+const res = await axios.get(`/api/posts/${postId}`)
 ```
 
 ---
@@ -634,13 +683,13 @@ mvn test -Dtest=PostServiceTest
 ### コード品質
 - [ ] 命名が明確・一貫している（略語・一文字変数なし）
 - [ ] Controllerにビジネスロジックが含まれていない
-- [ ] JPAエンティティをそのままViewに渡していない（DTOに変換）
+- [ ] JPAエンティティをそのままAPIレスポンスに返していない（DTOに変換）
 - [ ] マジックナンバーが定数に切り出されている
 
 ### セキュリティ
 - [ ] 他ユーザーのリソースへのアクセス制御が実装されている
 - [ ] 機密情報がコードにハードコードされていない
-- [ ] ThymeleafでXSS対策（`th:text`を使用、`th:utext`は使わない）
+- [ ] VueでXSS対策（テンプレート補間`{{ }}`を使用、`v-html`はユーザー入力に使わない）
 
 ### テスト
 - [ ] Serviceのユニットテストが追加・更新されている

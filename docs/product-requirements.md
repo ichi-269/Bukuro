@@ -293,8 +293,8 @@
 
 | レイヤー       | 使用技術                        |
 | -------------- | ------------------------------- |
-| バックエンド   | Spring Boot                     |
-| フロントエンド | Thymeleaf                       |
+| バックエンド   | Spring Boot（REST API）          |
+| フロントエンド | Vue 3 + TypeScript（SPA）        |
 | 認証           | Spring Security                 |
 | DB             | MySQL                           |
 | 外部API        | OpenBD API（書誌情報・書影）    |
