@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as booksApi from '../../api/books'
 import * as postsApi from '../../api/posts'
+import MarkdownEditor from '../../components/MarkdownEditor.vue'
 import type { ApiError, Book } from '../../types'
 
 const route = useRoute()
@@ -87,15 +88,13 @@ async function handleSubmit() {
 
           <div class="mb-3">
             <label for="body" class="form-label fw-semibold">本文 <span class="text-danger">*</span></label>
-            <textarea
+            <MarkdownEditor
               id="body"
               v-model="form.body"
-              class="form-control"
-              :class="{ 'is-invalid': errorFor('body') }"
-              rows="12"
+              :rows="12"
               placeholder="読書の感想や考えを書いてください"
-            ></textarea>
-            <div class="invalid-feedback">{{ errorFor('body') }}</div>
+              :error="errorFor('body')"
+            />
           </div>
 
           <div class="mb-4">
