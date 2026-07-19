@@ -39,7 +39,17 @@
       "Bash(nohup mvn -q spring-boot:run -Dspring-boot.run.profiles=local)",
       "Bash(echo \"PID:$!\")",
       "Bash(break)",
-      "Bash(nohup mvn -q spring-boot:run -Dspring-boot.run.profiles=local > /tmp/spring-boot-run2.log 2>&1 & *)"
+      "Bash(nohup mvn -q spring-boot:run -Dspring-boot.run.profiles=local > /tmp/spring-boot-run2.log 2>&1 & *)",
+      "Bash(npx vitest *)",
+      "Bash(npm test *)",
+      "Bash(mysql --version)",
+      "Bash(mysql -u root -e \"SHOW DATABASES;\")",
+      "Bash(nohup mvn spring-boot:run -Dspring-boot.run.profiles=local)",
+      "Bash(echo \"started with pid $!\")",
+      "Bash(node -e ' *)",
+      "Bash(kill 46858)",
+      "Bash(pkill -f \"spring-boot:run\")",
+      "Bash(mysql -u root -pms_Nac41c44 bukuro_dev -e \"DELETE FROM users WHERE username LIKE 'mdtest%';\")"
     ],
     "additionalDirectories": [
       "/tmp"

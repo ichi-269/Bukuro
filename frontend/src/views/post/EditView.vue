@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as postsApi from '../../api/posts'
+import MarkdownEditor from '../../components/MarkdownEditor.vue'
 import type { ApiError, Post } from '../../types'
 
 const route = useRoute()
@@ -91,14 +92,7 @@ async function handleSubmit() {
 
           <div class="mb-3">
             <label for="body" class="form-label fw-semibold">本文 <span class="text-danger">*</span></label>
-            <textarea
-              id="body"
-              v-model="form.body"
-              class="form-control"
-              :class="{ 'is-invalid': errorFor('body') }"
-              rows="12"
-            ></textarea>
-            <div class="invalid-feedback">{{ errorFor('body') }}</div>
+            <MarkdownEditor id="body" v-model="form.body" :rows="12" :error="errorFor('body')" />
           </div>
 
           <div class="mb-4">

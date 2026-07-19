@@ -201,7 +201,7 @@ URL ベースの認可（SecurityFilterChain）
 | 脅威 | 対策 |
 |------|------|
 | SQLインジェクション | Spring Data JPA パラメータバインディング（PreparedStatement） |
-| XSS | Vueテンプレート補間のデフォルトHTMLエスケープ |
+| XSS | Vueテンプレート補間のデフォルトHTMLエスケープ。記事本文のMarkdownレンダリング（`MarkdownContent.vue`, `MarkdownEditor.vue`のプレビュー）のみ例外的に`v-html`を使用するが、`marked`でHTML変換した後に必ず`DOMPurify`でサニタイズ（許可タグ・`href`属性のみのホワイトリスト方式）してから描画する |
 | CSRF | Spring Security CSRFトークン（Cookie + `X-XSRF-TOKEN`ヘッダー、axiosが自動送信） |
 | パスワード漏洩 | BCrypt(strength=12) ハッシュ化。平文保存禁止 |
 | 機密情報漏洩 | DB接続情報・シークレットキーは環境変数管理（`application.properties` にハードコードしない） |
@@ -382,6 +382,8 @@ jobs:
 | vue, vue-router, pinia | フレームワーク本体 | 最新安定版（`^`によるマイナー追従） |
 | axios | HTTP通信 | 最新安定版 |
 | bootstrap | CSSフレームワーク | 移行前と同じメジャーバージョン(5.x)を維持 |
+| marked | 記事本文（Markdown）のHTML変換 | 最新安定版 |
+| dompurify | Markdown変換後HTMLのサニタイズ（XSS対策） | 最新安定版 |
 | vite, @vitejs/plugin-vue, typescript, vue-tsc | ビルド・型チェック | 最新安定版 |
 | vitest, @vue/test-utils, msw | フロントエンドテスト | 最新安定版 |
 

@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import * as postsApi from '../../api/posts'
 import * as goodApi from '../../api/good'
 import { useAuthStore } from '../../stores/auth'
+import MarkdownContent from '../../components/MarkdownContent.vue'
 import type { ApiError, Post } from '../../types'
 
 const route = useRoute()
@@ -89,7 +90,7 @@ function formatDate(value: string) {
 
         <div class="card mb-4">
           <div class="card-body">
-            <p class="mb-0" style="white-space: pre-line">{{ post.body }}</p>
+            <MarkdownContent :body="post.body" />
           </div>
         </div>
 
