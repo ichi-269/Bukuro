@@ -1,5 +1,6 @@
 package com.bukuro.service;
 
+import com.bukuro.dto.ProfileEditForm;
 import com.bukuro.dto.RegisterForm;
 import com.bukuro.entity.User;
 import com.bukuro.exception.ResourceNotFoundException;
@@ -48,5 +49,22 @@ public class UserService {
 
     public boolean existsByUsername(String username) {
         return userRepository.existsByUsername(username);
+    }
+
+    @Transactional
+    public User updateProfile(Long userId, ProfileEditForm form) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("ユーザーが見つかりません: " + userId));
+
+        userRepository.findByUsername(form.getUsername())
+                .ifPresent(existing -> {
+                    if (!existing.getId().equals(userId)) {
+                        throw new IllegalStateException("このユーザー名はすでに使用されています: " + form.getUsername());
+                    }
+                });
+
+        user.setUsername(form.getUsername());
+        user.setBio(form.getBio() != null && !form.getBio().isBlank() ? form.getBio() : null);
+        return userRepository.save(user);
     }
 }

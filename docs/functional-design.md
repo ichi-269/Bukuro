@@ -497,7 +497,7 @@ stateDiagram-v2
 | 記事更新処理 | POST | `/posts/{postId}/edit` | 要（本人のみ） |
 | 記事削除処理 | POST | `/posts/{postId}/delete` | 要（本人のみ） |
 | マイページ | GET | `/mypage` | 要 |
-| プロフィール編集 | GET / POST | `/mypage/edit` | 要 |
+| プロフィール編集 | GET / POST | `/profile/edit` | 要 |
 | ユーザーページ | GET | `/users/{username}` | 不要 |
 | 本の詳細ページ | GET | `/books/{bookId}` | 不要 |
 | フォロー | POST | `/follow/{userId}` | 要 |

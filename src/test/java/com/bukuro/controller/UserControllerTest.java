@@ -20,9 +20,15 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import com.bukuro.dto.ProfileEditForm;
+
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import org.hamcrest.Matchers;
@@ -192,5 +198,81 @@ class UserControllerTest {
 
         mockMvc.perform(get("/users/nobody/following"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("認証済みで GET /profile/edit にアクセスすると編集フォームが表示される")
+    void editProfileForm_authenticated_returns200() throws Exception {
+        User me = User.builder()
+                .id(1L).username("myuser").email("me@example.com")
+                .createdAt(LocalDateTime.now()).build();
+
+        when(userService.getUserByEmail("me@example.com")).thenReturn(me);
+
+        mockMvc.perform(get("/profile/edit").with(user("me@example.com").roles("USER")))
+                .andExpect(status().isOk())
+                .andExpect(view().name("user/profile-edit"))
+                .andExpect(model().attributeExists("profileEditForm"));
+    }
+
+    @Test
+    @DisplayName("未認証で GET /profile/edit にアクセスするとログインにリダイレクトされる")
+    void editProfileForm_unauthenticated_redirectsToLogin() throws Exception {
+        mockMvc.perform(get("/profile/edit"))
+                .andExpect(status().is3xxRedirection());
+    }
+
+    @Test
+    @DisplayName("有効なフォームで POST /profile/edit するとプロフィールページにリダイレクトされる")
+    void editProfile_validForm_redirectsToUserPage() throws Exception {
+        User me = User.builder()
+                .id(1L).username("oldname").email("me@example.com")
+                .createdAt(LocalDateTime.now()).build();
+        User updated = User.builder()
+                .id(1L).username("newname").email("me@example.com")
+                .createdAt(LocalDateTime.now()).build();
+
+        when(userService.getUserByEmail("me@example.com")).thenReturn(me);
+        when(userService.updateProfile(anyLong(), any(ProfileEditForm.class))).thenReturn(updated);
+
+        mockMvc.perform(post("/profile/edit")
+                        .with(user("me@example.com").roles("USER"))
+                        .with(csrf())
+                        .param("username", "newname")
+                        .param("bio", "新しい自己紹介"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/users/newname"));
+    }
+
+    @Test
+    @DisplayName("バリデーションエラーで POST /profile/edit すると編集フォームに戻る")
+    void editProfile_validationError_returnsForm() throws Exception {
+        mockMvc.perform(post("/profile/edit")
+                        .with(user("me@example.com").roles("USER"))
+                        .with(csrf())
+                        .param("username", ""))
+                .andExpect(status().isOk())
+                .andExpect(view().name("user/profile-edit"));
+    }
+
+    @Test
+    @DisplayName("重複ユーザー名で POST /profile/edit するとエラーメッセージ付きで編集フォームに戻る")
+    void editProfile_duplicateUsername_returnsFormWithError() throws Exception {
+        User me = User.builder()
+                .id(1L).username("myname").email("me@example.com")
+                .createdAt(LocalDateTime.now()).build();
+
+        when(userService.getUserByEmail("me@example.com")).thenReturn(me);
+        when(userService.updateProfile(anyLong(), any(ProfileEditForm.class)))
+                .thenThrow(new IllegalStateException("このユーザー名はすでに使用されています: taken"));
+
+        mockMvc.perform(post("/profile/edit")
+                        .with(user("me@example.com").roles("USER"))
+                        .with(csrf())
+                        .param("username", "taken")
+                        .param("bio", ""))
+                .andExpect(status().isOk())
+                .andExpect(view().name("user/profile-edit"))
+                .andExpect(model().attributeExists("errorMessage"));
     }
 }

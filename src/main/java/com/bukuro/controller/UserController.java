@@ -1,17 +1,22 @@
 package com.bukuro.controller;
 
+import com.bukuro.dto.ProfileEditForm;
 import com.bukuro.entity.Post;
 import com.bukuro.entity.User;
 import com.bukuro.service.FollowService;
 import com.bukuro.service.PostService;
 import com.bukuro.service.UserService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
+import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 
 import java.util.List;
 
@@ -53,6 +58,35 @@ public class UserController {
         model.addAttribute("followerCount", followService.getFollowerCount(profileUser.getId()));
         model.addAttribute("followingCount", followService.getFollowingCount(profileUser.getId()));
         return "user/show";
+    }
+
+    @GetMapping("/profile/edit")
+    public String editProfileForm(@AuthenticationPrincipal UserDetails principal, Model model) {
+        User user = userService.getUserByEmail(principal.getUsername());
+        ProfileEditForm form = new ProfileEditForm();
+        form.setUsername(user.getUsername());
+        form.setBio(user.getBio());
+        model.addAttribute("profileEditForm", form);
+        return "user/profile-edit";
+    }
+
+    @PostMapping("/profile/edit")
+    public String editProfile(@AuthenticationPrincipal UserDetails principal,
+                              @Valid @ModelAttribute ProfileEditForm form,
+                              BindingResult bindingResult,
+                              Model model) {
+        if (bindingResult.hasErrors()) {
+            model.addAttribute("profileEditForm", form);
+            return "user/profile-edit";
+        }
+        User user = userService.getUserByEmail(principal.getUsername());
+        try {
+            User updated = userService.updateProfile(user.getId(), form);
+            return "redirect:/users/" + updated.getUsername();
+        } catch (IllegalStateException e) {
+            model.addAttribute("errorMessage", e.getMessage());
+            return "user/profile-edit";
+        }
     }
 
     @GetMapping("/users/{username}/followers")

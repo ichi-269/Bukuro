@@ -14,6 +14,7 @@ public class RegisterForm {
 
     @NotBlank(message = "ユーザー名を入力してください")
     @Size(min = 3, max = 50, message = "ユーザー名は3〜50文字で入力してください")
+    @Pattern(regexp = "^[a-zA-Z0-9_]+$", message = "ユーザー名は英数字・アンダースコアのみ使用できます")
     private String username;
 
     @NotBlank(message = "パスワードを入力してください")
