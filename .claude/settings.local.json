@@ -21,7 +21,28 @@
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); r=d[0]; print\\(json.dumps\\(r['summary'], ensure_ascii=False, indent=2\\)\\)\")",
       "Bash(xargs cat)",
       "Bash(mvn verify *)",
-      "Bash(chmod +x /Users/ichinohiroto/git/Bukuro/deploy/*.sh)"
+      "Bash(chmod +x /Users/ichinohiroto/git/Bukuro/deploy/*.sh)",
+      "Bash(mvn -q -o compile)",
+      "Bash(echo \"exit code: $?\")",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(mvn -q -o test-compile)",
+      "Bash(rm -f src/assets/hero.png src/assets/vite.svg src/assets/vue.svg src/components/HelloWorld.vue public/icons.svg public/favicon.svg)",
+      "Bash(rmdir src/assets)",
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(mvn -q generate-resources)",
+      "Bash(echo \"COMPILE_EXIT:$?\")",
+      "Bash(mvn -q -o test)",
+      "Read(//tmp/**)",
+      "Bash(brew services *)",
+      "Bash(mysql -u root -pms_Nac41c44 -e \"SHOW DATABASES;\")",
+      "Bash(nohup mvn -q spring-boot:run -Dspring-boot.run.profiles=local)",
+      "Bash(echo \"PID:$!\")",
+      "Bash(break)",
+      "Bash(nohup mvn -q spring-boot:run -Dspring-boot.run.profiles=local > /tmp/spring-boot-run2.log 2>&1 & *)"
+    ],
+    "additionalDirectories": [
+      "/tmp"
     ]
   }
 }

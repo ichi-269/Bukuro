@@ -21,6 +21,7 @@ import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 
+import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -57,18 +58,15 @@ class HomeControllerTest {
     }
 
     @Test
-    @DisplayName("未認証で GET / にアクセスすると200が返り feedPosts モデルがない")
-    void index_unauthenticated_returns200WithoutFeed() throws Exception {
-        mockMvc.perform(get("/"))
-                .andExpect(status().isOk())
-                .andExpect(view().name("home/index"))
-                .andExpect(model().attributeDoesNotExist("feedPosts"))
-                .andExpect(model().attributeDoesNotExist("feedType"));
+    @DisplayName("未認証で GET /api/home/feed にアクセスすると401が返る")
+    void feed_unauthenticated_returns401() throws Exception {
+        mockMvc.perform(get("/api/home/feed"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
     @DisplayName("フォロー中あり・パラメータなし: feedType=following でフォロイーの記事が返る")
-    void index_authenticatedWithFollowees_returnsFeed() throws Exception {
+    void feed_authenticatedWithFollowees_returnsFollowing() throws Exception {
         User me = buildUser(1L, "me@example.com");
         Post post = buildPost(10L, buildUser(2L, "other@example.com"));
 
@@ -76,18 +74,17 @@ class HomeControllerTest {
         when(followService.getFollowingCount(1L)).thenReturn(3L);
         when(postService.findFollowingFeed(1L)).thenReturn(List.of(post));
 
-        mockMvc.perform(get("/")
+        mockMvc.perform(get("/api/home/feed")
                         .with(SecurityMockMvcRequestPostProcessors.user("me@example.com").roles("USER")))
                 .andExpect(status().isOk())
-                .andExpect(view().name("home/index"))
-                .andExpect(model().attribute("feedType", "following"))
-                .andExpect(model().attribute("hasFollowees", true))
-                .andExpect(model().attributeExists("feedPosts"));
+                .andExpect(jsonPath("$.feedType").value("following"))
+                .andExpect(jsonPath("$.hasFollowees").value(true))
+                .andExpect(jsonPath("$.posts", hasSize(1)));
     }
 
     @Test
     @DisplayName("フォロー中あり・?feed=recommended: feedType=recommended でおすすめ記事が返る")
-    void index_authenticatedWithFollowees_feedRecommended_returnsRecommended() throws Exception {
+    void feed_authenticatedWithFollowees_feedRecommended_returnsRecommended() throws Exception {
         User me = buildUser(1L, "me@example.com");
         Post post = buildPost(20L, buildUser(3L, "popular@example.com"));
 
@@ -95,38 +92,17 @@ class HomeControllerTest {
         when(followService.getFollowingCount(1L)).thenReturn(3L);
         when(postService.findRecommendedFeed()).thenReturn(List.of(post));
 
-        mockMvc.perform(get("/")
+        mockMvc.perform(get("/api/home/feed")
                         .param("feed", "recommended")
                         .with(SecurityMockMvcRequestPostProcessors.user("me@example.com").roles("USER")))
                 .andExpect(status().isOk())
-                .andExpect(view().name("home/index"))
-                .andExpect(model().attribute("feedType", "recommended"))
-                .andExpect(model().attribute("hasFollowees", true))
-                .andExpect(model().attributeExists("feedPosts"));
-    }
-
-    @Test
-    @DisplayName("フォロー中あり・?feed=following: feedType=following でフォロイーの記事が返る")
-    void index_authenticatedWithFollowees_feedFollowing_returnsFollowing() throws Exception {
-        User me = buildUser(1L, "me@example.com");
-        Post post = buildPost(10L, buildUser(2L, "other@example.com"));
-
-        when(userService.getUserByEmail("me@example.com")).thenReturn(me);
-        when(followService.getFollowingCount(1L)).thenReturn(3L);
-        when(postService.findFollowingFeed(1L)).thenReturn(List.of(post));
-
-        mockMvc.perform(get("/")
-                        .param("feed", "following")
-                        .with(SecurityMockMvcRequestPostProcessors.user("me@example.com").roles("USER")))
-                .andExpect(status().isOk())
-                .andExpect(view().name("home/index"))
-                .andExpect(model().attribute("feedType", "following"))
-                .andExpect(model().attributeExists("feedPosts"));
+                .andExpect(jsonPath("$.feedType").value("recommended"))
+                .andExpect(jsonPath("$.hasFollowees").value(true));
     }
 
     @Test
     @DisplayName("フォロー中なし: feedType=recommended でおすすめ記事が返る")
-    void index_authenticatedWithoutFollowees_returnsRecommended() throws Exception {
+    void feed_authenticatedWithoutFollowees_returnsRecommended() throws Exception {
         User me = buildUser(1L, "me@example.com");
         Post post = buildPost(20L, buildUser(3L, "popular@example.com"));
 
@@ -134,60 +110,58 @@ class HomeControllerTest {
         when(followService.getFollowingCount(1L)).thenReturn(0L);
         when(postService.findRecommendedFeed()).thenReturn(List.of(post));
 
-        mockMvc.perform(get("/")
+        mockMvc.perform(get("/api/home/feed")
                         .with(SecurityMockMvcRequestPostProcessors.user("me@example.com").roles("USER")))
                 .andExpect(status().isOk())
-                .andExpect(view().name("home/index"))
-                .andExpect(model().attribute("feedType", "recommended"))
-                .andExpect(model().attribute("hasFollowees", false))
-                .andExpect(model().attributeExists("feedPosts"));
+                .andExpect(jsonPath("$.feedType").value("recommended"))
+                .andExpect(jsonPath("$.hasFollowees").value(false));
     }
 
     @Test
     @DisplayName("フォロー中なし・?feed=following 指定: hasFollowees=false のため feedType=recommended になる")
-    void index_noFollowees_feedFollowingParam_stillReturnsRecommended() throws Exception {
+    void feed_noFollowees_feedFollowingParam_stillReturnsRecommended() throws Exception {
         User me = buildUser(1L, "me@example.com");
 
         when(userService.getUserByEmail("me@example.com")).thenReturn(me);
         when(followService.getFollowingCount(1L)).thenReturn(0L);
         when(postService.findRecommendedFeed()).thenReturn(Collections.emptyList());
 
-        mockMvc.perform(get("/")
+        mockMvc.perform(get("/api/home/feed")
                         .param("feed", "following")
                         .with(SecurityMockMvcRequestPostProcessors.user("me@example.com").roles("USER")))
                 .andExpect(status().isOk())
-                .andExpect(model().attribute("feedType", "recommended"));
+                .andExpect(jsonPath("$.feedType").value("recommended"));
     }
 
     @Test
-    @DisplayName("フォロー中あり・フォロイーに記事なし: feedType=following かつ feedPosts が空")
-    void index_followingWithNoPostsYet_emptyFeed() throws Exception {
+    @DisplayName("フォロー中あり・フォロイーに記事なし: feedType=following かつ posts が空")
+    void feed_followingWithNoPostsYet_emptyFeed() throws Exception {
         User me = buildUser(1L, "me@example.com");
 
         when(userService.getUserByEmail("me@example.com")).thenReturn(me);
         when(followService.getFollowingCount(1L)).thenReturn(2L);
         when(postService.findFollowingFeed(1L)).thenReturn(Collections.emptyList());
 
-        mockMvc.perform(get("/")
+        mockMvc.perform(get("/api/home/feed")
                         .with(SecurityMockMvcRequestPostProcessors.user("me@example.com").roles("USER")))
                 .andExpect(status().isOk())
-                .andExpect(model().attribute("feedType", "following"))
-                .andExpect(model().attribute("feedPosts", Collections.emptyList()));
+                .andExpect(jsonPath("$.feedType").value("following"))
+                .andExpect(jsonPath("$.posts", hasSize(0)));
     }
 
     @Test
-    @DisplayName("フォロー中なし・公開記事なし: feedType=recommended かつ feedPosts が空")
-    void index_noFolloweesAndNoPosts_emptyRecommended() throws Exception {
+    @DisplayName("フォロー中なし・公開記事なし: feedType=recommended かつ posts が空")
+    void feed_noFolloweesAndNoPosts_emptyRecommended() throws Exception {
         User me = buildUser(1L, "me@example.com");
 
         when(userService.getUserByEmail("me@example.com")).thenReturn(me);
         when(followService.getFollowingCount(1L)).thenReturn(0L);
         when(postService.findRecommendedFeed()).thenReturn(Collections.emptyList());
 
-        mockMvc.perform(get("/")
+        mockMvc.perform(get("/api/home/feed")
                         .with(SecurityMockMvcRequestPostProcessors.user("me@example.com").roles("USER")))
                 .andExpect(status().isOk())
-                .andExpect(model().attribute("feedType", "recommended"))
-                .andExpect(model().attribute("feedPosts", Collections.emptyList()));
+                .andExpect(jsonPath("$.feedType").value("recommended"))
+                .andExpect(jsonPath("$.posts", hasSize(0)));
     }
 }

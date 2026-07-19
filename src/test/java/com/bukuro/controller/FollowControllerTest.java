@@ -20,7 +20,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(FollowController.class)
 @Import(SecurityConfig.class)
@@ -44,46 +44,43 @@ class FollowControllerTest {
     }
 
     @Test
-    @DisplayName("POST /users/{username}/follow でフォローが実行されてリダイレクトされる")
-    void follow_authenticated_redirectsToUserPage() throws Exception {
+    @DisplayName("POST /api/users/{username}/follow でフォローが実行され204が返る")
+    void follow_authenticated_returns204() throws Exception {
         User currentUser = buildUser(1L, "me", "me@example.com");
         User targetUser = buildUser(2L, "target", "target@example.com");
 
         when(userService.getUserByEmail("me@example.com")).thenReturn(currentUser);
         when(userService.getUserByUsername("target")).thenReturn(targetUser);
 
-        mockMvc.perform(post("/users/target/follow")
+        mockMvc.perform(post("/api/users/target/follow")
                         .with(SecurityMockMvcRequestPostProcessors.user("me@example.com").roles("USER"))
                         .with(csrf()))
-                .andExpect(status().is3xxRedirection())
-                .andExpect(redirectedUrl("/users/target"));
+                .andExpect(status().isNoContent());
 
         verify(followService).follow(1L, 2L);
     }
 
     @Test
-    @DisplayName("POST /users/{username}/unfollow でアンフォローが実行されてリダイレクトされる")
-    void unfollow_authenticated_redirectsToUserPage() throws Exception {
+    @DisplayName("POST /api/users/{username}/unfollow でアンフォローが実行され204が返る")
+    void unfollow_authenticated_returns204() throws Exception {
         User currentUser = buildUser(1L, "me", "me@example.com");
         User targetUser = buildUser(2L, "target", "target@example.com");
 
         when(userService.getUserByEmail("me@example.com")).thenReturn(currentUser);
         when(userService.getUserByUsername("target")).thenReturn(targetUser);
 
-        mockMvc.perform(post("/users/target/unfollow")
+        mockMvc.perform(post("/api/users/target/unfollow")
                         .with(SecurityMockMvcRequestPostProcessors.user("me@example.com").roles("USER"))
                         .with(csrf()))
-                .andExpect(status().is3xxRedirection())
-                .andExpect(redirectedUrl("/users/target"));
+                .andExpect(status().isNoContent());
 
         verify(followService).unfollow(1L, 2L);
     }
 
     @Test
-    @DisplayName("未認証で POST /users/{username}/follow にアクセスするとログインページへリダイレクトされる")
-    void follow_unauthenticated_redirectsToLogin() throws Exception {
-        mockMvc.perform(post("/users/target/follow").with(csrf()))
-                .andExpect(status().is3xxRedirection())
-                .andExpect(redirectedUrlPattern("**/login"));
+    @DisplayName("未認証で POST /api/users/{username}/follow にアクセスすると401が返る")
+    void follow_unauthenticated_returns401() throws Exception {
+        mockMvc.perform(post("/api/users/target/follow").with(csrf()))
+                .andExpect(status().isUnauthorized());
     }
 }

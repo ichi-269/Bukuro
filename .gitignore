@@ -2,6 +2,11 @@
 target/
 *.class
 
+# Frontend（Viteビルド成果物。mvn generate-resourcesで自動生成される）
+frontend/node_modules/
+frontend/node/
+src/main/resources/static/
+
 # ローカル設定（DB接続情報等）
 src/main/resources/application-local.properties
 

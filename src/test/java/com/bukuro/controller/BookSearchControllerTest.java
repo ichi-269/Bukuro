@@ -6,16 +6,19 @@ import com.bukuro.exception.ExternalApiException;
 import com.bukuro.service.BookSearchService;
 import com.bukuro.service.BookTitleSearchService;
 import com.bukuro.service.CustomUserDetailsService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
@@ -29,6 +32,9 @@ class BookSearchControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @MockBean
     private BookSearchService bookSearchService;
@@ -53,48 +59,47 @@ class BookSearchControllerTest {
     }
 
     @Test
-    @DisplayName("POST /books/search/title: 正常な検索で title-results ビューと候補が返る")
-    void searchByTitle_validKeyword_returnsTitleResults() throws Exception {
+    @DisplayName("POST /api/books/search/title: 正常な検索で候補一覧が返る")
+    void searchByTitle_validKeyword_returnsCandidates() throws Exception {
         when(bookTitleSearchService.searchByTitle("テスト駆動開発"))
                 .thenReturn(List.of(sampleNdlBook()));
 
-        mockMvc.perform(post("/books/search/title")
+        mockMvc.perform(post("/api/books/search/title")
                         .with(LOGGED_IN).with(csrf())
-                        .param("keyword", "テスト駆動開発"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("keyword", "テスト駆動開発"))))
                 .andExpect(status().isOk())
-                .andExpect(view().name("book/title-results"))
-                .andExpect(model().attribute("keyword", "テスト駆動開発"))
-                .andExpect(model().attributeExists("candidates"));
+                .andExpect(jsonPath("$[0].title").value("テスト駆動開発"));
     }
 
     @Test
-    @DisplayName("POST /books/search/title: 空キーワードは検索フォームに戻す")
-    void searchByTitle_blankKeyword_returnsSearchForm() throws Exception {
-        mockMvc.perform(post("/books/search/title")
+    @DisplayName("POST /api/books/search/title: 空キーワードは400を返す")
+    void searchByTitle_blankKeyword_returns400() throws Exception {
+        mockMvc.perform(post("/api/books/search/title")
                         .with(LOGGED_IN).with(csrf())
-                        .param("keyword", "   "))
-                .andExpect(status().isOk())
-                .andExpect(view().name("book/search"))
-                .andExpect(model().attributeExists("errorMessage"));
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("keyword", "   "))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
     }
 
     @Test
-    @DisplayName("POST /books/search/title: NDL APIエラーは検索フォームにエラーメッセージを表示")
-    void searchByTitle_apiError_returnsSearchFormWithError() throws Exception {
+    @DisplayName("POST /api/books/search/title: NDL APIエラーは502を返す")
+    void searchByTitle_apiError_returns502() throws Exception {
         when(bookTitleSearchService.searchByTitle(anyString()))
                 .thenThrow(new ExternalApiException("接続エラー"));
 
-        mockMvc.perform(post("/books/search/title")
+        mockMvc.perform(post("/api/books/search/title")
                         .with(LOGGED_IN).with(csrf())
-                        .param("keyword", "テスト"))
-                .andExpect(status().isOk())
-                .andExpect(view().name("book/search"))
-                .andExpect(model().attributeExists("errorMessage"));
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("keyword", "テスト"))))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.code").value("EXTERNAL_API_ERROR"));
     }
 
     @Test
-    @DisplayName("POST /books/search/confirm: 正常なISBNで confirm ビューが返る")
-    void confirmFromTitle_validIsbn_returnsConfirmView() throws Exception {
+    @DisplayName("POST /api/books/search/confirm: 正常なISBNで書誌情報が返る")
+    void confirmFromTitle_validIsbn_returnsBook() throws Exception {
         BookDto book = BookDto.builder()
                 .isbn("9784000000011")
                 .title("テスト駆動開発")
@@ -106,52 +111,54 @@ class BookSearchControllerTest {
                 "9784000000011", "テスト駆動開発", "Kent Beck", "オーム社"))
                 .thenReturn(book);
 
-        mockMvc.perform(post("/books/search/confirm")
+        mockMvc.perform(post("/api/books/search/confirm")
                         .with(LOGGED_IN).with(csrf())
-                        .param("isbn", "9784000000011")
-                        .param("title", "テスト駆動開発")
-                        .param("author", "Kent Beck")
-                        .param("publisher", "オーム社"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "isbn", "9784000000011",
+                                "title", "テスト駆動開発",
+                                "author", "Kent Beck",
+                                "publisher", "オーム社"))))
                 .andExpect(status().isOk())
-                .andExpect(view().name("book/confirm"))
-                .andExpect(model().attributeExists("book"));
+                .andExpect(jsonPath("$.title").value("テスト駆動開発"));
     }
 
     @Test
-    @DisplayName("POST /books/search/confirm: OpenBD APIエラーは検索フォームにエラーメッセージを表示")
-    void confirmFromTitle_apiError_returnsSearchFormWithError() throws Exception {
+    @DisplayName("POST /api/books/search/confirm: OpenBD APIエラーは502を返す")
+    void confirmFromTitle_apiError_returns502() throws Exception {
         when(bookTitleSearchService.getBookWithCover(anyString(), anyString(), anyString(), anyString()))
                 .thenThrow(new ExternalApiException("接続エラー"));
 
-        mockMvc.perform(post("/books/search/confirm")
+        mockMvc.perform(post("/api/books/search/confirm")
                         .with(LOGGED_IN).with(csrf())
-                        .param("isbn", "9784000000011")
-                        .param("title", "テスト")
-                        .param("author", "著者")
-                        .param("publisher", "出版社"))
-                .andExpect(status().isOk())
-                .andExpect(view().name("book/search"))
-                .andExpect(model().attributeExists("errorMessage"));
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "isbn", "9784000000011",
+                                "title", "テスト",
+                                "author", "著者",
+                                "publisher", "出版社"))))
+                .andExpect(status().isBadGateway());
     }
 
     @Test
-    @DisplayName("POST /books/search/confirm: 空ISBNは検索フォームにエラーメッセージを表示")
-    void confirmFromTitle_blankIsbn_returnsSearchFormWithError() throws Exception {
-        mockMvc.perform(post("/books/search/confirm")
+    @DisplayName("POST /api/books/search/confirm: 空ISBNは400を返す")
+    void confirmFromTitle_blankIsbn_returns400() throws Exception {
+        mockMvc.perform(post("/api/books/search/confirm")
                         .with(LOGGED_IN).with(csrf())
-                        .param("isbn", "   ")
-                        .param("title", "テスト"))
-                .andExpect(status().isOk())
-                .andExpect(view().name("book/search"))
-                .andExpect(model().attributeExists("errorMessage"));
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "isbn", "   ",
+                                "title", "テスト"))))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
-    @DisplayName("未認証で POST /books/search/title にアクセスするとリダイレクト")
-    void searchByTitle_unauthenticated_redirectsToLogin() throws Exception {
-        mockMvc.perform(post("/books/search/title")
+    @DisplayName("未認証で POST /api/books/search/title にアクセスすると401が返る")
+    void searchByTitle_unauthenticated_returns401() throws Exception {
+        mockMvc.perform(post("/api/books/search/title")
                         .with(csrf())
-                        .param("keyword", "テスト"))
-                .andExpect(status().is3xxRedirection());
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("keyword", "テスト"))))
+                .andExpect(status().isUnauthorized());
     }
 }

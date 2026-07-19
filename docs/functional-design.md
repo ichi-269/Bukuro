@@ -4,22 +4,22 @@
 
 ```mermaid
 graph TB
-    User[ユーザー ブラウザ]
-    Controller[Controller Layer<br/>Spring MVC]
+    User[ユーザー ブラウザ<br/>Vue 3 SPA]
+    Controller[Controller Layer<br/>Spring MVC (@RestController)]
     Service[Service Layer<br/>ビジネスロジック]
     Repository[Repository Layer<br/>Spring Data JPA]
     DB[(MySQL)]
-    OpenBD[OpenBD API<br/>外部書誌情報]
-    Thymeleaf[Thymeleaf<br/>テンプレートエンジン]
+    OpenBD[OpenBD / NDL API<br/>外部書誌情報]
 
-    User -->|HTTP Request| Controller
+    User -->|HTTP Request /api/** JSON| Controller
     Controller --> Service
     Service --> Repository
     Repository --> DB
-    Service -->|ISBN検索| OpenBD
-    Controller --> Thymeleaf
-    Thymeleaf -->|HTML Response| User
+    Service -->|ISBN・書名検索| OpenBD
+    Controller -->|JSON Response| User
 ```
+
+Vue SPAのビルド成果物（index.html・JS・CSS）はSpring Bootアプリ自身が静的ファイルとして配信する（詳細は`docs/architecture.md`参照）。
 
 ---
 
@@ -28,13 +28,13 @@ graph TB
 | 分類 | 技術 | 選定理由 |
 |------|------|----------|
 | バックエンド | Spring Boot 3.x | Java標準のWebフレームワーク。Spring Security・JPA等のエコシステムが充実 |
-| テンプレートエンジン | Thymeleaf | Spring Bootとの統合が容易。HTML5準拠のサーバーサイドレンダリング |
-| 認証・認可 | Spring Security | CSRF対策・セッション管理・BCryptハッシュが標準で対応 |
+| フロントエンド | Vue 3 + TypeScript + Vite | SPA構成。Composition APIによる簡潔な記述、Viteによる高速な開発体験 |
+| 認証・認可 | Spring Security | CSRF対策（Cookieベース）・セッション管理・BCryptハッシュが標準で対応 |
 | ORM | Spring Data JPA（Hibernate） | エンティティとDBのマッピング。CRUD操作を自動生成 |
 | データベース | MySQL 8.x | リレーショナルデータの管理。本番環境に実績あり |
-| 外部API | OpenBD API | ISBN→書誌情報の無料API。APIキー不要 |
-| グラフ | Chart.js | フロントエンドJSライブラリ。月別読書冊数の棒グラフ描画 |
-| ビルド | Maven | Spring Boot標準のビルドツール |
+| 外部API | OpenBD API / NDL Search API | ISBN・書名→書誌情報の無料API。APIキー不要 |
+| グラフ | （未実装） | 月別読書冊数グラフはPRD/機能設計書に記載があるが、本書執筆時点で未実装。SPA移行(2026-07-19)でも移行対象外としている。実装時はChart.js等の採用を別途検討する |
+| ビルド | Maven（frontend-maven-pluginでフロントエンドビルドも統合） | Spring Boot標準のビルドツール |
 | デプロイ | Render / Railway | PaaS。無料〜低コストで本番運用可能 |
 
 ---
@@ -215,19 +215,18 @@ erDiagram
 
 ## コンポーネント設計
 
-### Controller層（Spring MVC）
+### Controller層（Spring MVC / `@RestController`）
 
-各Controllerは対応するHTTPエンドポイントを持ち、ServiceへのDIとThymeleafテンプレートへのデータ渡しを担当する。
+各Controllerは`/api`配下のHTTPエンドポイントを持ち、ServiceへのDIとDTOのJSONレスポンス返却を担当する。画面描画は行わず、Vue SPAがJSONを受け取ってレンダリングする。
 
 | Controller | 責務 |
 |------------|------|
-| `HomeController` | ホーム画面（未ログイン / ログイン済み） |
-| `AuthController` | ユーザー登録・ログイン・ログアウト |
-| `BookSearchController` | ISBN検索・書籍登録 |
-| `ShelfController` | 本棚管理（一覧・ステータス変更・削除） |
-| `PostController` | 記事作成・編集・削除・詳細表示 |
-| `MyPageController` | マイページ・プロフィール編集 |
-| `UserController` | 他ユーザーページ表示 |
+| `HomeController` | ホームフィード取得（フォロー中 / おすすめ） |
+| `AuthController` | ユーザー登録・現在ユーザー取得（ログイン/ログアウトはSpring Securityの標準フィルタが処理） |
+| `BookSearchController` | ISBN検索・書名検索・書誌確認 |
+| `ShelfController` | 本棚管理（一覧・追加・ステータス変更・削除） |
+| `PostController` | 記事作成・編集・削除・詳細表示、書籍単体取得 |
+| `UserController` | ユーザープロフィール取得・編集、他ユーザーページ、フォロワー/フォロー中一覧 |
 | `FollowController` | フォロー・アンフォロー |
 | `GoodController` | グッド追加・取り消し |
 
@@ -243,7 +242,8 @@ erDiagram
 | `PostService` | `create(userId, bookId, title, body, isPublic)` / `update(postId, ...)` / `delete(postId)` / `findPublicFeed(userId)` |
 | `FollowService` | `follow(followerId, followeeId)` / `unfollow(followerId, followeeId)` |
 | `GoodService` | `addGood(userId, postId)` / `removeGood(userId, postId)` |
-| `StatsService` | `getMonthlyReadCount(userId): Map<YearMonth, Integer>` |
+| `BookTitleSearchService` | `searchByTitle(keyword): List<BookDto>` ← NDL APIコール、OpenBDとのフォールバック連携 |
+| `CustomUserDetailsService` | Spring Security `UserDetailsService`実装。メールアドレスでの認証 |
 
 ---
 
@@ -296,14 +296,14 @@ sequenceDiagram
     participant BookRepo as BookRepository
     participant RecordRepo as ReadingRecordRepository
 
-    User->>Controller: POST /books/search (isbn=978...)
+    User->>Controller: POST /api/books/search {isbn: "978..."}
     Controller->>BookSearchSvc: searchByIsbn(isbn)
     BookSearchSvc->>OpenBD: GET /v1/get?isbn=978...
     OpenBD-->>BookSearchSvc: BookInfo JSON
     BookSearchSvc-->>Controller: BookDto(title, author, cover_url)
-    Controller-->>User: 確認画面表示(書誌情報)
+    Controller-->>User: 200 BookDto(JSON) ※SPA側で確認画面を表示
 
-    User->>Controller: POST /books/add (isbn=978...)
+    User->>Controller: POST /api/shelf {isbn: "978..."}
     Controller->>ShelfSvc: addToShelf(userId, isbn)
     ShelfSvc->>BookRepo: findByIsbn(isbn)
     alt 書籍未登録
@@ -314,12 +314,12 @@ sequenceDiagram
     end
     ShelfSvc->>RecordRepo: existsByUserIdAndBookId?
     alt 既に本棚に追加済み
-        ShelfSvc-->>Controller: DuplicateException
-        Controller-->>User: エラー表示
+        ShelfSvc-->>Controller: DuplicateRecordException
+        Controller-->>User: 409 ErrorResponse(JSON)
     else 未登録
         ShelfSvc->>RecordRepo: save(ReadingRecord{status=WANT_TO_READ})
         ShelfSvc-->>Controller: 成功
-        Controller-->>User: 本棚へリダイレクト
+        Controller-->>User: 201 ShelfEntryDto(JSON) ※SPA側で本棚画面へ遷移
     end
 ```
 
@@ -334,19 +334,19 @@ sequenceDiagram
     participant PostSvc as PostService
     participant PostRepo as PostRepository
 
-    User->>Controller: GET /posts/new?bookId=1
-    Controller-->>User: 記事作成フォーム(書誌情報付き)
+    User->>Controller: GET /api/books/{bookId} ※記事作成フォーム表示用に書誌情報取得
+    Controller-->>User: 200 BookDto(JSON)
 
-    User->>Controller: POST /posts (title, body, isPublic, bookId)
-    Controller->>Controller: バリデーション(title必須, body必須)
+    User->>Controller: POST /api/posts?bookId=1 {title, body, isPublic}
+    Controller->>Controller: バリデーション(@Valid: title必須, body必須)
     alt バリデーションエラー
-        Controller-->>User: エラー付きフォーム再表示
+        Controller-->>User: 400 ErrorResponse(fieldErrors)
     else OK
-        Controller->>PostSvc: create(userId, bookId, title, body, isPublic)
+        Controller->>PostSvc: create(userId, bookId, form)
         PostSvc->>PostRepo: save(Post)
         PostRepo-->>PostSvc: saved Post
         PostSvc-->>Controller: Post
-        Controller-->>User: 記事詳細ページへリダイレクト
+        Controller-->>User: 201 PostDto(JSON) ※SPA側で記事詳細ページへ遷移
     end
 ```
 
@@ -362,17 +362,17 @@ sequenceDiagram
     participant GoodRepo as GoodRepository
     participant PostRepo as PostRepository
 
-    User->>Controller: POST /goods/{postId}
+    User->>Controller: POST /api/posts/{postId}/good
     Controller->>GoodSvc: addGood(userId, postId)
     GoodSvc->>GoodRepo: existsByUserIdAndPostId?
     alt 既にグッド済み
-        GoodSvc-->>Controller: AlreadyGoodException
-        Controller-->>User: エラー(または無視)
+        GoodSvc-->>Controller: DuplicateRecordException
+        Controller-->>User: 409 ErrorResponse(JSON)
     else 未グッド
         GoodSvc->>GoodRepo: save(Good)
         GoodSvc->>PostRepo: incrementGoodCount(postId)
         GoodSvc-->>Controller: 成功
-        Controller-->>User: 記事詳細へリダイレクト(good_count更新)
+        Controller-->>User: 204 No Content ※SPA側でgood_countを再取得・反映
     end
 ```
 
@@ -387,7 +387,7 @@ sequenceDiagram
     participant FollowSvc as FollowService
     participant FollowRepo as FollowRepository
 
-    User->>Controller: POST /follow/{userId}
+    User->>Controller: POST /api/users/{username}/follow
     Controller->>FollowSvc: follow(followerId, followeeId)
     FollowSvc->>FollowRepo: existsByFollowerIdAndFolloweeId?
     alt 既にフォロー済み
@@ -396,9 +396,9 @@ sequenceDiagram
         FollowSvc->>FollowRepo: save(Follow)
         FollowSvc-->>Controller: 成功
     end
-    Controller-->>User: ユーザーページへリダイレクト
+    Controller-->>User: 204 No Content ※SPA側でフォロー状態をローカル更新
 
-    User->>Controller: POST /unfollow/{userId}
+    User->>Controller: POST /api/users/{username}/unfollow
     Controller->>FollowSvc: unfollow(followerId, followeeId)
     FollowSvc->>FollowRepo: findByFollowerIdAndFolloweeId
     alt フォロー関係が存在する
@@ -407,7 +407,7 @@ sequenceDiagram
     else 存在しない
         FollowSvc-->>Controller: 無視（冪等）
     end
-    Controller-->>User: ユーザーページへリダイレクト
+    Controller-->>User: 204 No Content ※SPA側でフォロー状態をローカル更新
 ```
 
 ---
@@ -422,22 +422,22 @@ sequenceDiagram
     participant FollowRepo as FollowRepository
     participant PostRepo as PostRepository
 
-    User->>Controller: GET /
+    User->>Controller: GET /api/home/feed
     alt 未ログイン
-        Controller-->>User: ホーム（未ログイン）画面
+        Controller-->>User: 401 Unauthenticated ※SPA側はそもそもこのAPIを呼ばずヒーローセクションを表示
     else ログイン済み
-        Controller->>PostSvc: findPublicFeed(userId)
+        Controller->>PostSvc: findFollowingFeed(userId) または findRecommendedFeed()
         PostSvc->>FollowRepo: findFolloweeIdsByFollowerId(userId)
         alt フォロー中ユーザーあり
             FollowRepo-->>PostSvc: followeeIds
-            PostSvc->>PostRepo: findByUserIdInAndIsPublicTrue(followeeIds, pageable)
+            PostSvc->>PostRepo: findByUserIdInAndIsPublicTrueOrderByCreatedAtDesc(followeeIds, pageable)
             PostRepo-->>PostSvc: フォロイーの公開記事一覧
         else フォロー中ユーザーなし
-            PostSvc->>PostRepo: findByIsPublicTrueOrderByGoodCountDesc(pageable)
+            PostSvc->>PostRepo: findByIsPublicTrueOrderByGoodCountDescCreatedAtDesc(pageable)
             PostRepo-->>PostSvc: おすすめ公開記事一覧
         end
-        PostSvc-->>Controller: PostDto一覧
-        Controller-->>User: ホームフィード画面
+        PostSvc-->>Controller: List<Post>
+        Controller-->>User: 200 HomeFeedDto(JSON)
     end
 ```
 
@@ -475,35 +475,37 @@ stateDiagram-v2
 
 ---
 
-## 画面・エンドポイント一覧
+## 画面・APIエンドポイント一覧
 
-| 画面名 | HTTPメソッド | パス | 認証要否 |
-|--------|------------|------|---------|
-| ホーム | GET | `/` | 不要 |
-| 新規登録フォーム | GET | `/register` | 不要 |
-| 新規登録処理 | POST | `/register` | 不要 |
-| ログインフォーム | GET | `/login` | 不要 |
-| ログアウト | POST | `/logout` | 要 |
-| ISBN検索フォーム | GET | `/books/search` | 要 |
-| ISBN検索実行 | POST | `/books/search` | 要 |
-| 本棚追加処理 | POST | `/books/add` | 要 |
-| 本棚一覧 | GET | `/shelf` | 要 |
-| 読書記録更新 | POST | `/shelf/{recordId}/status` | 要 |
-| 本棚から削除 | POST | `/shelf/{recordId}/delete` | 要 |
-| 記事作成フォーム | GET | `/posts/new` | 要 |
-| 記事作成処理 | POST | `/posts` | 要 |
-| 記事詳細 | GET | `/posts/{postId}` | 不要（公開記事） |
-| 記事編集フォーム | GET | `/posts/{postId}/edit` | 要（本人のみ） |
-| 記事更新処理 | POST | `/posts/{postId}/edit` | 要（本人のみ） |
-| 記事削除処理 | POST | `/posts/{postId}/delete` | 要（本人のみ） |
-| マイページ | GET | `/mypage` | 要 |
-| プロフィール編集 | GET / POST | `/profile/edit` | 要 |
-| ユーザーページ | GET | `/users/{username}` | 不要 |
-| 本の詳細ページ | GET | `/books/{bookId}` | 不要 |
-| フォロー | POST | `/follow/{userId}` | 要 |
-| アンフォロー | POST | `/unfollow/{userId}` | 要 |
-| グッド追加 | POST | `/goods/{postId}` | 要 |
-| グッド取り消し | POST | `/goods/{postId}/remove` | 要 |
+画面はVue Router（SPA、`docs/repository-structure.md`のフロントエンド構造を参照）が担当し、バックエンドは以下のJSON APIのみを提供する。
+
+| 機能 | HTTPメソッド | パス | 認証要否 |
+|------|------------|------|---------|
+| 新規登録 | POST | `/api/register` | 不要 |
+| ログイン | POST | `/api/login`（Spring Security標準フィルタ） | 不要 |
+| ログアウト | POST | `/api/logout`（Spring Security標準フィルタ） | 要 |
+| 現在ユーザー取得 | GET | `/api/me` | 不要（未ログイン時は200+空ボディ） |
+| ISBN検索 | POST | `/api/books/search` | 要 |
+| 書名検索 | POST | `/api/books/search/title` | 要 |
+| 書誌確認（書名検索結果から） | POST | `/api/books/search/confirm` | 要 |
+| 書籍単体取得 | GET | `/api/books/{bookId}` | 要 |
+| 本棚一覧取得 | GET | `/api/shelf` | 要 |
+| 本棚追加 | POST | `/api/shelf` | 要 |
+| 本棚ステータス変更 | PATCH | `/api/shelf/{recordId}` | 要 |
+| 本棚から削除 | DELETE | `/api/shelf/{recordId}` | 要 |
+| 記事作成 | POST | `/api/posts?bookId={bookId}` | 要 |
+| 記事詳細取得 | GET | `/api/posts/{postId}` | 不要（公開記事）/ 要（非公開は本人のみ） |
+| 記事更新 | PUT | `/api/posts/{postId}` | 要（本人のみ） |
+| 記事削除 | DELETE | `/api/posts/{postId}` | 要（本人のみ） |
+| ユーザープロフィール取得 | GET | `/api/users/{username}` | 不要 |
+| プロフィール編集 | PUT | `/api/profile/edit` | 要 |
+| フォロワー一覧 | GET | `/api/users/{username}/followers` | 不要 |
+| フォロー中一覧 | GET | `/api/users/{username}/following` | 不要 |
+| フォロー | POST | `/api/users/{username}/follow` | 要 |
+| アンフォロー | POST | `/api/users/{username}/unfollow` | 要 |
+| グッド追加 | POST | `/api/posts/{postId}/good` | 要 |
+| グッド取り消し | POST | `/api/posts/{postId}/ungood` | 要 |
+| ホームフィード取得 | GET | `/api/home/feed` | 要 |
 
 ---
 
@@ -513,10 +515,13 @@ stateDiagram-v2
 
 ```
 SecurityConfig
-├── permitAll: GET /, /login, /register, /posts/{id}(公開), /users/{username}, /books/{bookId}
-├── authenticated: その他すべて
-├── CSRF: 有効（formによるPOST時にトークン付与）
-├── Session: セッションベース認証
+├── /api/**: デフォルト authenticated
+│    ├── permitAll: /api/login, /api/register, /api/me, /api/users/**,
+│    │              GET /api/posts/{id:数字}（公開記事詳細）
+│    └── authenticated（明示）: POST /api/users/*/follow・unfollow, /api/posts/*/good・ungood
+├── /api 以外: 全てpermitAll（SPAシェル・静的アセットのみ配信するため）
+├── CSRF: CookieCsrfTokenRepository（XSRF-TOKEN Cookie） + CsrfCookieFilter + CsrfTokenRequestAttributeHandler
+├── Session: セッションベース認証（SPAはcredentials:includeでCookieを自動送信）
 └── PasswordEncoder: BCryptPasswordEncoder(strength=12)
 ```
 
@@ -532,11 +537,13 @@ SecurityConfig
 
 ---
 
-## 月別読書グラフ設計（Chart.js）
+## 月別読書グラフ設計（未実装）
 
-### データ取得
+> **注記（2026-07-19）**: 本セクションはPRD（`docs/product-requirements.md`）に基づく設計案だが、`StatsService`を含め現時点でバックエンド・フロントエンドともに未実装である。SPA移行（Vue 3化）でもこの機能は移行対象外としている（存在しない機能を移行することはできないため）。実装する際は、以下のデータ取得方針をベースに、`GET /api/stats/monthly-read-count`のようなJSON APIを新設し、フロントエンドはVueコンポーネント + グラフライブラリ（Chart.js等）で描画する方式を想定する。
 
-`StatsService#getMonthlyReadCount(userId)` が過去12ヶ月分の読了冊数を返す。
+### データ取得（設計案）
+
+`StatsService#getMonthlyReadCount(userId)` が過去12ヶ月分の読了冊数を返す想定。
 
 ```sql
 SELECT DATE_FORMAT(finished_at, '%Y-%m') AS month, COUNT(*) AS count
@@ -547,43 +554,36 @@ GROUP BY month
 ORDER BY month ASC;
 ```
 
-### フロントエンド実装
-
-Thymeleafがグラフデータを `<script>` タグ内のJS変数としてHTMLに埋め込む。Chart.jsの棒グラフ（Bar Chart）で描画する。
-
-```html
-<script>
-const chartData = /*[[${chartDataJson}]]*/ {};
-// Chart.jsでレンダリング
-</script>
-```
-
 ---
 
 ## エラーハンドリング
 
 ### エラーの分類
 
-| エラー種別 | 発生箇所 | 処理 | ユーザーへの表示 |
-|-----------|---------|------|-----------------|
-| バリデーションエラー | Controller | フォームに`BindingResult`でエラー返却 | フォームの各フィールドにエラーメッセージ表示 |
-| ISBN未発見 | BookSearchService | `BookNotFoundException`をスロー | 「この書籍はOpenBDに登録されていません」 |
-| OpenBD APIタイムアウト | OpenBdApiClient | `ExternalApiException`をスロー | 「書誌情報の取得に失敗しました。しばらく後で再試行してください」 |
-| 重複本棚登録 | ShelfService | `DuplicateRecordException`をスロー | 「この本はすでに本棚に登録されています」 |
-| 認証エラー | Spring Security | 403リダイレクト | ログインページへリダイレクト |
-| 権限エラー | Service | `AccessDeniedException`をスロー | 403エラーページ |
-| リソース未発見 | Service | `ResourceNotFoundException`をスロー | 404エラーページ |
-| DB接続エラー | Repository | `DataAccessException` | 500エラーページ（汎用エラー） |
+| エラー種別 | 発生箇所 | 処理 | HTTPステータス | ユーザーへの表示 |
+|-----------|---------|------|---------------|-----------------|
+| バリデーションエラー | Controller (`@Valid`) | `MethodArgumentNotValidException` | 400 | フォームの各フィールドにエラーメッセージ表示（`fieldErrors`をSPA側でマッピング） |
+| ISBN未発見 | BookSearchService | `BookNotFoundException`をスロー | 404 | 「この書籍はOpenBDに登録されていません」 |
+| OpenBD/NDL APIタイムアウト | ApiClient | `ExternalApiException`をスロー | 502 | 「書誌情報の取得に失敗しました。しばらく後で再試行してください」 |
+| 重複本棚登録・重複グッド | Service | `DuplicateRecordException`をスロー | 409 | 「この本はすでに本棚に登録されています」等 |
+| 未認証 | Spring Security | `authenticationEntryPoint` | 401 | SPA側でログインページへ遷移 |
+| 権限エラー | Service | `AccessDeniedException`をスロー | 403 | エラーメッセージ表示 |
+| リソース未発見 | Service | `ResourceNotFoundException`をスロー | 404 | エラーメッセージ表示（非公開記事へのアクセスもこれで扱い、存在有無を漏らさない） |
+| その他予期しない例外 | 全レイヤー | `Exception`をキャッチ | 500 | 「予期しないエラーが発生しました」 |
 
 ### グローバルエラーハンドラー
 
-`@ControllerAdvice` で共通エラーページにルーティングする。
+`@RestControllerAdvice` で構造化JSONエラーレスポンス（`ErrorResponse`: status・code・message・fieldErrors）に変換する。
 
 ```
-GlobalExceptionHandler
-├── ResourceNotFoundException → 404.html
-├── AccessDeniedException → 403.html
-└── Exception（その他すべて） → 500.html
+GlobalExceptionHandler（@RestControllerAdvice）
+├── MethodArgumentNotValidException → 400 VALIDATION_ERROR（fieldErrors付き）
+├── BookNotFoundException → 404 BOOK_NOT_FOUND
+├── DuplicateRecordException → 409 DUPLICATE_RECORD
+├── ResourceNotFoundException → 404 RESOURCE_NOT_FOUND
+├── ExternalApiException → 502 EXTERNAL_API_ERROR
+├── AccessDeniedException → 403 ACCESS_DENIED
+└── Exception（その他すべて） → 500 INTERNAL_ERROR
 ```
 
 ---
@@ -592,9 +592,9 @@ GlobalExceptionHandler
 
 | 脅威 | 対策 |
 |------|------|
-| CSRF | Spring SecurityのCSRFトークンをすべてのPOSTフォームに付与 |
+| CSRF | Spring SecurityのCSRFトークン（Cookie + `X-XSRF-TOKEN`ヘッダー、axiosが自動送信）をすべての状態変更リクエストに要求 |
 | SQLインジェクション | Spring Data JPA（パラメータバインディング）を使用 |
-| XSS | ThymeleafのHTMLエスケープ（デフォルト有効） |
+| XSS | Vueテンプレート補間（`{{ }}`）のデフォルトHTMLエスケープ |
 | パスワード漏洩 | BCrypt(strength=12)でハッシュ化 |
 | 不正アクセス | ServiceレイヤーでuserIdチェック（他人のリソース操作不可） |
 | OpenBDデータ改変 | 書誌情報フィールドをUIで編集不可にする |
@@ -604,21 +604,25 @@ GlobalExceptionHandler
 
 ## テスト戦略
 
-### ユニットテスト（JUnit 5 + Mockito）
+### バックエンドユニットテスト（JUnit 5 + Mockito）
 
 - `BookSearchService`: OpenBD APIのレスポンスパターン（正常・ISBN未発見・タイムアウト）
+- `BookTitleSearchService`: NDL API検索・OpenBDへのフォールバック
 - `ShelfService`: 重複チェック・ステータス遷移のロジック
 - `PostService`: 公開フラグ制御・所有権チェック
 - `GoodService`: 重複グッドの防止ロジック
-- `StatsService`: 月別集計クエリの結果変換
 
-### 統合テスト（Spring Boot Test + TestContainers）
+### バックエンドControllerテスト（`@WebMvcTest`）
 
-- `ReadingRecordRepository`: (user_id, book_id) のUNIQUE制約
-- `PostRepository`: is_public=trueのみ返す公開記事クエリ
-- `FollowRepository`: フォロー・フォロワー関係の取得
+- JSONレスポンス（ステータスコード・`jsonPath`）を検証する（AuthController, BookSearchController, FollowController, GoodController, HomeController, UserController）
 
-### E2Eテスト（手動 / Selenium）
+### フロントエンドユニットテスト（Vitest + Vue Test Utils）
+
+- Piniaストア（認証状態の取得・更新ロジック）
+- フォームのバリデーションエラー表示・画面遷移ロジックを持つビューコンポーネント
+
+### E2Eテスト（手動）
 
 - 新規ユーザー登録→ISBN検索→本棚追加→記事作成→公開→他ユーザーから閲覧 の一連フロー
 - ログインしていない状態での非公開記事へのアクセス拒否確認
+- ブラウザの直接URL入力・リロードでVue Routerのクライアントサイドルートが正しく表示されること

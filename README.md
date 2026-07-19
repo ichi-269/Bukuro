@@ -13,15 +13,16 @@ ISBNを入力するだけで書誌情報を自動取得し、ブログ形式で�
 
 ## 技術スタック
 
+構成はバックエンド(REST API)とフロントエンド(SPA)に分離しており、単一のSpring Bootサービスとしてデプロイされます。
+
 | レイヤー | 技術 |
 |----------|------|
 | バックエンド | Java 21 / Spring Boot 3.3 / Spring Security / Spring Data JPA |
-| テンプレート | Thymeleaf 3 |
+| フロントエンド | Vue 3 / TypeScript / Vite / Vue Router / Pinia / axios / Bootstrap 5.3 |
 | データベース | MySQL 8 |
-| フロントエンド | Bootstrap 5.3 |
 | 書誌情報 API | [OpenBD](https://openbd.jp/) / [国立国会図書館 NDL Search API](https://ndlsearch.ndl.go.jp/) |
-| テスト | JUnit 5 / Mockito |
-| ビルド | Maven |
+| テスト | JUnit 5 / Mockito（バックエンド）、Vitest / Vue Test Utils（フロントエンド） |
+| ビルド | Maven（`frontend-maven-plugin`経由でフロントエンドのビルドも統合） |
 
 ## セットアップ
 
@@ -30,6 +31,7 @@ ISBNを入力するだけで書誌情報を自動取得し、ブログ形式で�
 - Java 21 以上
 - MySQL 8.0 以上
 - Maven
+- Node.js 24 系（フロントエンドを個別に開発する場合のみ。バックエンドと合わせてビルドする場合は`mvn`が自動取得するため不要）
 
 ### 1. リポジトリのクローン
 
@@ -65,16 +67,40 @@ spring.jpa.show-sql=true
 
 ### 4. 起動
 
+バックエンド・フロントエンドを合わせて1コマンドで起動できます（`mvn`がフロントエンドのビルドも自動実行します）。
+
 ```bash
 mvn spring-boot:run
 ```
 
 ブラウザで http://localhost:8080 にアクセスしてください。
 
+#### フロントエンドを個別に開発する場合
+
+Vueコンポーネントを編集しながらホットリロードで確認したい場合は、バックエンドとフロントエンドを別々に起動します。
+
+```bash
+# ターミナル1: バックエンド(API)を起動
+mvn spring-boot:run
+
+# ターミナル2: フロントエンドの開発サーバーを起動（/api への通信は自動的にlocalhost:8080へプロキシされる）
+cd frontend
+npm install
+npm run dev
+```
+
+ブラウザで http://localhost:5173 にアクセスしてください。
+
 ## テストの実行
 
 ```bash
+# バックエンド
 mvn test
+
+# フロントエンド
+cd frontend
+npm run test        # ユニットテスト（Vitest）
+npm run type-check   # 型チェック（vue-tsc）
 ```
 
 ## 本番デプロイ

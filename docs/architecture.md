@@ -18,16 +18,24 @@
 | Spring Security | 6.x (Spring Boot内包) | 認証・認可・CSRF対策 | セッション管理・BCrypt・CSRF保護が標準搭載 |
 | Spring Data JPA | 3.x (Spring Boot内包) | ORM・DBアクセス | リポジトリパターンによるCRUD自動生成 |
 | Hibernate | 6.x (JPA実装) | SQLの自動生成・マッピング | JPA実装として業界標準 |
-| Thymeleaf | 3.x | サーバーサイドHTMLテンプレート | Spring MVCとの統合が容易。HTMLとしてそのまま開けるナチュラルテンプレート |
 | MySQL Connector/J | 8.x | JDBCドライバ | MySQL 8.xに対応した公式ドライバ |
 | Lombok | 最新安定版 | ボイラープレートコード削減 | Getter/Setter/Builder等のアノテーション自動生成 |
 
 ### フロントエンド
 
+SPA(Single Page Application)構成。バックエンドはJSON APIのみを提供し、画面描画は全てブラウザ側のVueアプリケーションが担う。
+
 | 技術 | バージョン | 用途 | 選定理由 |
 |------|-----------|------|----------|
-| Chart.js | 4.x | 月別読書グラフ描画 | 軽量・設定簡単なJSグラフライブラリ。CDN経由で導入可能 |
-| Bootstrap | 5.x | レスポンシブCSSフレームワーク | スマートフォン対応のグリッドシステム。開発速度向上 |
+| Vue 3 | 3.5.x | UIフレームワーク | Composition API・`<script setup>`による簡潔な記述。Thymeleafのテンプレート構文に近く移行時の学習コストが低い |
+| TypeScript | 5.x | 型付きJavaScript | バックエンドDTOとの型整合性をコンパイル時に検証 |
+| Vite | 5.x | ビルドツール・開発サーバー | 高速な開発体験。ビルド成果物を`src/main/resources/static`に直接出力し単一サービスデプロイを維持 |
+| Vue Router | 4.x | クライアントサイドルーティング | 認証必須ルートのナビゲーションガードをサポート |
+| Pinia | 2.x | 状態管理 | Vue公式の状態管理ライブラリ。認証状態(現在ユーザー)をアプリ全体で共有 |
+| axios | 1.x | HTTP通信 | Cookieベース認証(`withCredentials`)・CSRFトークンのCookie/ヘッダー連携が標準搭載 |
+| Bootstrap | 5.x | レスポンシブCSSフレームワーク | npm依存として導入しViteでバンドル。移行前と同一のスタイルを踏襲 |
+| Vitest | 2.x | フロントエンドユニットテスト | Viteとの統合が標準。Piniaストア・コンポーネントのテストに使用 |
+| Vue Test Utils | 2.x | コンポーネントテストユーティリティ | 公式のVueコンポーネントテストライブラリ |
 
 ### 開発ツール
 
@@ -37,36 +45,46 @@
 | JUnit 5 | ユニットテスト | Spring Boot Testとの統合が標準 |
 | Mockito | モックライブラリ | JUnit 5との統合。ServiceレイヤーのRepositoryモック |
 | TestContainers | 統合テスト用DBコンテナ | テスト専用MySQLコンテナを起動して実DBで検証 |
+| frontend-maven-plugin | Maven-npm連携 | `mvn verify`実行時にNode.js/npmを自動取得し、フロントエンドのビルド(`npm run build`)を`generate-resources`フェーズで実行。単一のMavenビルドでバックエンド・フロントエンド双方を検証可能にする |
 
 ---
 
 ## アーキテクチャパターン
 
-### レイヤードアーキテクチャ（Spring MVC標準）
+### SPA + REST API構成
 
 ```
-┌──────────────────────────────────────────────┐
-│   Presentation Layer（Controller + Thymeleaf）│  ← HTTPリクエスト受付・HTMLレスポンス
-├──────────────────────────────────────────────┤
-│   Service Layer（@Service）                   │  ← ビジネスロジック
-├──────────────────────────────────────────────┤
-│   Repository Layer（@Repository / JPA）       │  ← DB操作
-├──────────────────────────────────────────────┤
-│   Database（MySQL）                           │  ← データ永続化
-└──────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────┐
+│  ブラウザ: Vue 3 SPA（Vue Router / Pinia / axios）  │  ← 画面描画・ルーティングを全てクライアント側で担当
+└───────────────────┬──────────────────────────────────┘
+                     │ fetch/axios（JSON, /api/**, credentials:include）
+┌───────────────────▼──────────────────────────────────┐
+│   Presentation Layer（@RestController）              │  ← HTTPリクエスト受付・JSONレスポンス
+├──────────────────────────────────────────────────────┤
+│   Service Layer（@Service）                          │  ← ビジネスロジック
+├──────────────────────────────────────────────────────┤
+│   Repository Layer（@Repository / JPA）              │  ← DB操作
+├──────────────────────────────────────────────────────┤
+│   Database（MySQL）                                  │  ← データ永続化
+└──────────────────────────────────────────────────────┘
 
 外部連携:
-  Service Layer ─────→ OpenBD API（ISBN→書誌情報）
-  Presentation Layer → Chart.js（ブラウザ側グラフ描画）
+  Service Layer ─────→ OpenBD / NDL API（ISBN・書名→書誌情報）
+
+静的配信:
+  Vueのビルド成果物（index.html + assets/）を src/main/resources/static に配置し、
+  Spring Boot が単一サービスとして配信する。/api/** 以外の全パスは
+  SpaWebConfig（WebMvcConfigurer + PathResourceResolver）により index.html にフォールバックし、
+  Vue Router のクライアントサイドルーティングに委譲する
 ```
 
 #### Presentation Layer（Controller）
-- **責務**: リクエストのルーティング、入力バリデーション（`@Valid`）、Thymeleafへのモデル渡し
+- **責務**: リクエストのルーティング、入力バリデーション（`@Valid`）、DTOのJSONレスポンス返却
 - **禁止**: Repositoryへの直接アクセス、ビジネスロジックの実装
 
 #### Service Layer
 - **責務**: ビジネスロジック（所有権チェック・重複検証・ステータス遷移）、外部APIコール
-- **禁止**: Thymeleafテンプレートへの依存、直接的なHTTPレスポンス操作
+- **禁止**: プレゼンテーション層（DTO変換・HTTPレスポンス）への依存
 
 #### Repository Layer
 - **責務**: DB操作（CRUD）、カスタムクエリ（JPQL/ネイティブSQL）
@@ -78,17 +96,18 @@
 
 ```mermaid
 graph TB
-    Browser[ユーザー ブラウザ]
-    App[Spring Boot アプリ<br/>Render / Railway]
+    Browser[ユーザー ブラウザ<br/>Vue 3 SPA]
+    App[Spring Boot アプリ<br/>Render / Railway<br/>REST API + 静的ファイル配信]
     DB[(MySQL<br/>Render / Railway DB)]
-    OpenBD[OpenBD API<br/>外部サービス]
-    CDN[Bootstrap / Chart.js<br/>CDN]
+    OpenBD[OpenBD / NDL API<br/>外部サービス]
 
-    Browser -->|HTTPS| App
+    Browser -->|HTTPS 初回: index.html+assets 配信| App
+    Browser -->|HTTPS /api/** JSON| App
     App -->|JDBC| DB
     App -->|HTTPS| OpenBD
-    Browser -->|CDN読み込み| CDN
 ```
+
+Vue SPAのビルド成果物(index.html・JS・CSS)はSpring Bootアプリ自身が静的ファイルとして配信するため、フロントエンド専用のCDNやホスティングは不要（単一サービスデプロイ構成を維持）。
 
 ### デプロイ先: Render または Railway
 
@@ -151,8 +170,12 @@ graph TB
 ```
 Spring Security Configuration
 ├── パスワード: BCryptPasswordEncoder(strength=12)
-├── セッション: HttpSession（サーバー側保持）
-├── CSRF: CsrfFilter（全POSTフォームにトークン付与）
+├── セッション: HttpSession（サーバー側保持。SPAはCookieを自動送信するcredentials:includeで連携）
+├── CSRF: CookieCsrfTokenRepository（XSRF-TOKEN Cookieをhttpオンリー無効で発行）
+│         + CsrfCookieFilter（CsrfTokenを強制的に読み取らせCookie発行を保証。トークンの遅延解決対策）
+│         + CsrfTokenRequestAttributeHandler（axiosがCookie値をそのままヘッダーで送る方式に対応。
+│           デフォルトのXorCsrfTokenRequestAttributeHandlerはSPA構成と噛み合わないため明示的に変更）
+├── ログイン/ログアウト: /api/login, /api/logout（JSON成功/失敗ハンドラでリダイレクトせずステータスコードを返す）
 └── セキュリティヘッダー: X-Frame-Options, X-Content-Type-Options（デフォルト有効）
 ```
 
@@ -160,8 +183,12 @@ Spring Security Configuration
 
 ```
 URL ベースの認可（SecurityFilterChain）
-├── permitAll: GET /, /login, /register, /posts/{id}, /users/{username}, /books/{bookId}
-└── authenticated: その他すべて
+├── /api/** : デフォルト authenticated
+│    ├── permitAll: /api/login, /api/register, /api/me, /api/users/**,
+│    │              GET /api/posts/{id:数字}（公開記事詳細）
+│    └── authenticated（明示）: POST /api/users/*/follow・unfollow, /api/posts/*/good・ungood
+└── /api 以外: 全てpermitAll（SPAシェル・静的アセットの配信のみで、保護すべきデータは
+                全て /api 経由となるため。認証状態のUI分岐はクライアント側で行う）
 
 リソースレベルの認可（ServiceLayer）
 ├── Post編集・削除: post.userId == currentUserId
@@ -174,8 +201,8 @@ URL ベースの認可（SecurityFilterChain）
 | 脅威 | 対策 |
 |------|------|
 | SQLインジェクション | Spring Data JPA パラメータバインディング（PreparedStatement） |
-| XSS | Thymeleaf デフォルトHTMLエスケープ（`th:text`） |
-| CSRF | Spring Security CSRFトークン（`_csrf` hidden field） |
+| XSS | Vueテンプレート補間のデフォルトHTMLエスケープ |
+| CSRF | Spring Security CSRFトークン（Cookie + `X-XSRF-TOKEN`ヘッダー、axiosが自動送信） |
 | パスワード漏洩 | BCrypt(strength=12) ハッシュ化。平文保存禁止 |
 | 機密情報漏洩 | DB接続情報・シークレットキーは環境変数管理（`application.properties` にハードコードしない） |
 
@@ -301,10 +328,13 @@ jobs:
 
 | ステップ | 内容 |
 |---------|------|
+| フロントエンドビルド | `mvn verify`の`generate-resources`フェーズで`frontend-maven-plugin`がNode.js/npmを自動取得し`npm run build`（vue-tsc型チェック含む）を実行。成果物は`src/main/resources/static`に出力され、以降のバックエンドビルドに組み込まれる |
 | ビルド | `mvn verify`（ユニットテスト + 統合テスト + JaCoCoカバレッジ） |
-| テスト | JUnit 5 + Mockito（ユニット） / TestContainers → GitHub Actions MySQL service（統合） |
+| テスト | JUnit 5 + Mockito（ユニット） / TestContainers → GitHub Actions MySQL service（統合） / Vitest + Vue Test Utils（フロントエンドユニット、`frontend/`配下で`npm run test`を個別実行） |
 | カバレッジ | JaCoCoレポートをartifactとして保存。Serviceレイヤー80%以上を目標 |
 | デプロイ | `main` ブランチへのマージ時にRender/Railwayが自動デプロイ |
+
+**注記**: 現時点で`.github/workflows/`は存在しない（過去にユーザーが意図的に削除）。上記CI設定例は今後CIを再導入する際の参考として維持している。再導入時は`npm run test`をCIステップに明示的に追加することを推奨する（`mvn verify`は`npm run build`のみを実行し、Vitestは含まない）。
 
 ---
 
@@ -338,11 +368,21 @@ jobs:
 | spring-boot-starter-web | Spring MVC | Spring Boot BOMに従う（固定） |
 | spring-boot-starter-security | 認証・CSRF | Spring Boot BOMに従う（固定） |
 | spring-boot-starter-data-jpa | ORM | Spring Boot BOMに従う（固定） |
-| spring-boot-starter-thymeleaf | テンプレートエンジン | Spring Boot BOMに従う（固定） |
-| thymeleaf-extras-springsecurity6 | Thymeleaf + Security統合 | Spring Boot BOMに従う（固定） |
+| spring-boot-starter-validation | Bean Validation | Spring Boot BOMに従う（固定） |
 | mysql-connector-j | JDBCドライバ | Spring Boot BOMに従う（固定） |
 | lombok | ボイラープレート削減 | 最新安定版（`provided`スコープ） |
 | spring-boot-starter-test | テストフレームワーク | Spring Boot BOMに従う（固定） |
 | testcontainers | 統合テスト用DBコンテナ | 最新安定版（testスコープ） |
+| frontend-maven-plugin | Maven-npm連携 | 固定バージョン管理（`pom.xml`に明記） |
+
+### フロントエンド依存パッケージ（`frontend/package.json`）
+
+| ライブラリ | 用途 | バージョン管理方針 |
+|-----------|------|-------------------|
+| vue, vue-router, pinia | フレームワーク本体 | 最新安定版（`^`によるマイナー追従） |
+| axios | HTTP通信 | 最新安定版 |
+| bootstrap | CSSフレームワーク | 移行前と同じメジャーバージョン(5.x)を維持 |
+| vite, @vitejs/plugin-vue, typescript, vue-tsc | ビルド・型チェック | 最新安定版 |
+| vitest, @vue/test-utils, msw | フロントエンドテスト | 最新安定版 |
 
 **方針**: Spring Boot BOMを採用することで、ライブラリ間の互換性はSpringチームが保証する。BOM外のライブラリのみ個別にバージョン管理する。

@@ -1,6 +1,7 @@
 package com.bukuro.controller;
 
 import com.bukuro.config.SecurityConfig;
+import com.bukuro.dto.ProfileEditForm;
 import com.bukuro.entity.Book;
 import com.bukuro.entity.Post;
 import com.bukuro.entity.User;
@@ -9,29 +10,29 @@ import com.bukuro.service.CustomUserDetailsService;
 import com.bukuro.service.FollowService;
 import com.bukuro.service.PostService;
 import com.bukuro.service.UserService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
-import com.bukuro.dto.ProfileEditForm;
-
+import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
-
-import org.hamcrest.Matchers;
 
 @WebMvcTest(UserController.class)
 @Import(SecurityConfig.class)
@@ -39,6 +40,9 @@ class UserControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @MockBean
     private UserService userService;
@@ -53,7 +57,7 @@ class UserControllerTest {
     private CustomUserDetailsService customUserDetailsService;
 
     @Test
-    @DisplayName("存在するユーザー名で GET /users/{username} にアクセスすると200が返る")
+    @DisplayName("存在するユーザー名で GET /api/users/{username} にアクセスすると200が返る")
     void show_existingUser_returns200() throws Exception {
         User user = User.builder()
                 .id(1L).username("testuser").email("test@example.com")
@@ -67,26 +71,25 @@ class UserControllerTest {
         when(userService.getUserByUsername("testuser")).thenReturn(user);
         when(postService.findPublicByUserId(1L)).thenReturn(List.of(post));
 
-        mockMvc.perform(get("/users/testuser"))
+        mockMvc.perform(get("/api/users/testuser"))
                 .andExpect(status().isOk())
-                .andExpect(view().name("user/show"))
-                .andExpect(model().attributeExists("profileUser"))
-                .andExpect(model().attributeExists("posts"))
-                .andExpect(model().attribute("postCount", 1));
+                .andExpect(jsonPath("$.profileUser.username").value("testuser"))
+                .andExpect(jsonPath("$.posts", hasSize(1)))
+                .andExpect(jsonPath("$.postCount").value(1));
     }
 
     @Test
-    @DisplayName("存在しないユーザー名で GET /users/{username} にアクセスすると404が返る")
+    @DisplayName("存在しないユーザー名で GET /api/users/{username} にアクセスすると404が返る")
     void show_notExistingUser_returns404() throws Exception {
         when(userService.getUserByUsername("nobody"))
                 .thenThrow(new ResourceNotFoundException("ユーザーが見つかりません: nobody"));
 
-        mockMvc.perform(get("/users/nobody"))
+        mockMvc.perform(get("/api/users/nobody"))
                 .andExpect(status().isNotFound());
     }
 
     @Test
-    @DisplayName("未認証でも GET /users/{username} にアクセスできる")
+    @DisplayName("未認証でも GET /api/users/{username} にアクセスできる")
     void show_unauthenticated_returns200() throws Exception {
         User user = User.builder()
                 .id(1L).username("pubuser").email("pub@example.com")
@@ -95,10 +98,10 @@ class UserControllerTest {
         when(userService.getUserByUsername("pubuser")).thenReturn(user);
         when(postService.findPublicByUserId(1L)).thenReturn(List.of());
 
-        mockMvc.perform(get("/users/pubuser"))
+        mockMvc.perform(get("/api/users/pubuser"))
                 .andExpect(status().isOk())
-                .andExpect(model().attribute("postCount", 0))
-                .andExpect(model().attribute("isOwnPage", false));
+                .andExpect(jsonPath("$.postCount").value(0))
+                .andExpect(jsonPath("$.isOwnPage").value(false));
     }
 
     @Test
@@ -111,11 +114,10 @@ class UserControllerTest {
         when(userService.getUserByUsername("ownuser")).thenReturn(user);
         when(postService.findPublicByUserId(1L)).thenReturn(List.of());
 
-        mockMvc.perform(get("/users/ownuser")
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors
-                                .user("own@example.com").roles("USER")))
+        mockMvc.perform(get("/api/users/ownuser")
+                        .with(user("own@example.com").roles("USER")))
                 .andExpect(status().isOk())
-                .andExpect(model().attribute("isOwnPage", true));
+                .andExpect(jsonPath("$.isOwnPage").value(true));
     }
 
     @Test
@@ -133,15 +135,14 @@ class UserControllerTest {
         when(postService.findPublicByUserId(2L)).thenReturn(List.of());
         when(followService.isFollowing(anyLong(), anyLong())).thenReturn(false);
 
-        mockMvc.perform(get("/users/otheruser")
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors
-                                .user("me@example.com").roles("USER")))
+        mockMvc.perform(get("/api/users/otheruser")
+                        .with(user("me@example.com").roles("USER")))
                 .andExpect(status().isOk())
-                .andExpect(model().attribute("isOwnPage", false));
+                .andExpect(jsonPath("$.isOwnPage").value(false));
     }
 
     @Test
-    @DisplayName("GET /users/{username}/followers でフォロワー一覧が返る")
+    @DisplayName("GET /api/users/{username}/followers でフォロワー一覧が返る")
     void followers_existingUser_returns200() throws Exception {
         User profileUser = User.builder()
                 .id(1L).username("testuser").email("test@example.com")
@@ -153,15 +154,14 @@ class UserControllerTest {
         when(userService.getUserByUsername("testuser")).thenReturn(profileUser);
         when(followService.getFollowers(1L)).thenReturn(List.of(follower));
 
-        mockMvc.perform(get("/users/testuser/followers"))
+        mockMvc.perform(get("/api/users/testuser/followers"))
                 .andExpect(status().isOk())
-                .andExpect(view().name("user/followers"))
-                .andExpect(model().attributeExists("profileUser"))
-                .andExpect(model().attribute("users", Matchers.hasSize(1)));
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].username").value("follower1"));
     }
 
     @Test
-    @DisplayName("GET /users/{username}/following でフォロー中一覧が返る")
+    @DisplayName("GET /api/users/{username}/following でフォロー中一覧が返る")
     void following_existingUser_returns200() throws Exception {
         User profileUser = User.builder()
                 .id(1L).username("testuser").email("test@example.com")
@@ -173,58 +173,35 @@ class UserControllerTest {
         when(userService.getUserByUsername("testuser")).thenReturn(profileUser);
         when(followService.getFollowees(1L)).thenReturn(List.of(followee));
 
-        mockMvc.perform(get("/users/testuser/following"))
+        mockMvc.perform(get("/api/users/testuser/following"))
                 .andExpect(status().isOk())
-                .andExpect(view().name("user/following"))
-                .andExpect(model().attributeExists("profileUser"))
-                .andExpect(model().attribute("users", Matchers.hasSize(1)));
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].username").value("followee1"));
     }
 
     @Test
-    @DisplayName("存在しないユーザーの GET /users/{username}/followers は404が返る")
+    @DisplayName("存在しないユーザーの GET /api/users/{username}/followers は404が返る")
     void followers_notExistingUser_returns404() throws Exception {
         when(userService.getUserByUsername("nobody"))
                 .thenThrow(new ResourceNotFoundException("ユーザーが見つかりません: nobody"));
 
-        mockMvc.perform(get("/users/nobody/followers"))
+        mockMvc.perform(get("/api/users/nobody/followers"))
                 .andExpect(status().isNotFound());
     }
 
     @Test
-    @DisplayName("存在しないユーザーの GET /users/{username}/following は404が返る")
+    @DisplayName("存在しないユーザーの GET /api/users/{username}/following は404が返る")
     void following_notExistingUser_returns404() throws Exception {
         when(userService.getUserByUsername("nobody"))
                 .thenThrow(new ResourceNotFoundException("ユーザーが見つかりません: nobody"));
 
-        mockMvc.perform(get("/users/nobody/following"))
+        mockMvc.perform(get("/api/users/nobody/following"))
                 .andExpect(status().isNotFound());
     }
 
     @Test
-    @DisplayName("認証済みで GET /profile/edit にアクセスすると編集フォームが表示される")
-    void editProfileForm_authenticated_returns200() throws Exception {
-        User me = User.builder()
-                .id(1L).username("myuser").email("me@example.com")
-                .createdAt(LocalDateTime.now()).build();
-
-        when(userService.getUserByEmail("me@example.com")).thenReturn(me);
-
-        mockMvc.perform(get("/profile/edit").with(user("me@example.com").roles("USER")))
-                .andExpect(status().isOk())
-                .andExpect(view().name("user/profile-edit"))
-                .andExpect(model().attributeExists("profileEditForm"));
-    }
-
-    @Test
-    @DisplayName("未認証で GET /profile/edit にアクセスするとログインにリダイレクトされる")
-    void editProfileForm_unauthenticated_redirectsToLogin() throws Exception {
-        mockMvc.perform(get("/profile/edit"))
-                .andExpect(status().is3xxRedirection());
-    }
-
-    @Test
-    @DisplayName("有効なフォームで POST /profile/edit するとプロフィールページにリダイレクトされる")
-    void editProfile_validForm_redirectsToUserPage() throws Exception {
+    @DisplayName("有効なフォームで PUT /api/profile/edit すると更新後のユーザー情報が返る")
+    void editProfile_validForm_returnsUpdatedUser() throws Exception {
         User me = User.builder()
                 .id(1L).username("oldname").email("me@example.com")
                 .createdAt(LocalDateTime.now()).build();
@@ -235,29 +212,41 @@ class UserControllerTest {
         when(userService.getUserByEmail("me@example.com")).thenReturn(me);
         when(userService.updateProfile(anyLong(), any(ProfileEditForm.class))).thenReturn(updated);
 
-        mockMvc.perform(post("/profile/edit")
+        mockMvc.perform(put("/api/profile/edit")
                         .with(user("me@example.com").roles("USER"))
                         .with(csrf())
-                        .param("username", "newname")
-                        .param("bio", "新しい自己紹介"))
-                .andExpect(status().is3xxRedirection())
-                .andExpect(redirectedUrl("/users/newname"));
-    }
-
-    @Test
-    @DisplayName("バリデーションエラーで POST /profile/edit すると編集フォームに戻る")
-    void editProfile_validationError_returnsForm() throws Exception {
-        mockMvc.perform(post("/profile/edit")
-                        .with(user("me@example.com").roles("USER"))
-                        .with(csrf())
-                        .param("username", ""))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "username", "newname", "bio", "新しい自己紹介"))))
                 .andExpect(status().isOk())
-                .andExpect(view().name("user/profile-edit"));
+                .andExpect(jsonPath("$.username").value("newname"));
     }
 
     @Test
-    @DisplayName("重複ユーザー名で POST /profile/edit するとエラーメッセージ付きで編集フォームに戻る")
-    void editProfile_duplicateUsername_returnsFormWithError() throws Exception {
+    @DisplayName("未認証で PUT /api/profile/edit にアクセスすると401が返る")
+    void editProfile_unauthenticated_returns401() throws Exception {
+        mockMvc.perform(put("/api/profile/edit")
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("username", "x"))))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("バリデーションエラーで PUT /api/profile/edit すると400が返る")
+    void editProfile_validationError_returns400() throws Exception {
+        mockMvc.perform(put("/api/profile/edit")
+                        .with(user("me@example.com").roles("USER"))
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("username", ""))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
+    @DisplayName("重複ユーザー名で PUT /api/profile/edit すると409が返る")
+    void editProfile_duplicateUsername_returns409() throws Exception {
         User me = User.builder()
                 .id(1L).username("myname").email("me@example.com")
                 .createdAt(LocalDateTime.now()).build();
@@ -266,13 +255,12 @@ class UserControllerTest {
         when(userService.updateProfile(anyLong(), any(ProfileEditForm.class)))
                 .thenThrow(new IllegalStateException("このユーザー名はすでに使用されています: taken"));
 
-        mockMvc.perform(post("/profile/edit")
+        mockMvc.perform(put("/api/profile/edit")
                         .with(user("me@example.com").roles("USER"))
                         .with(csrf())
-                        .param("username", "taken")
-                        .param("bio", ""))
-                .andExpect(status().isOk())
-                .andExpect(view().name("user/profile-edit"))
-                .andExpect(model().attributeExists("errorMessage"));
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("username", "taken", "bio", ""))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"));
     }
 }

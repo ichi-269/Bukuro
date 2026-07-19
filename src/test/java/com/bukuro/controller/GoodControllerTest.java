@@ -20,8 +20,8 @@ import java.time.LocalDateTime;
 import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.flash;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(GoodController.class)
 @Import(SecurityConfig.class)
@@ -45,61 +45,56 @@ class GoodControllerTest {
     }
 
     @Test
-    @DisplayName("POST /posts/{postId}/good でグッドが実行されてリダイレクトされる")
-    void good_authenticated_redirectsToPost() throws Exception {
+    @DisplayName("POST /api/posts/{postId}/good でグッドが実行され204が返る")
+    void good_authenticated_returns204() throws Exception {
         when(userService.getUserByEmail("me@example.com")).thenReturn(buildUser(1L));
 
-        mockMvc.perform(post("/posts/5/good")
+        mockMvc.perform(post("/api/posts/5/good")
                         .with(SecurityMockMvcRequestPostProcessors.user("me@example.com").roles("USER"))
                         .with(csrf()))
-                .andExpect(status().is3xxRedirection())
-                .andExpect(redirectedUrl("/posts/5"));
+                .andExpect(status().isNoContent());
 
         verify(goodService).addGood(1L, 5L);
     }
 
     @Test
-    @DisplayName("POST /posts/{postId}/good で既にグッド済みの場合はリダイレクト（フラッシュメッセージ）")
-    void good_alreadyGooded_redirectsWithWarning() throws Exception {
+    @DisplayName("POST /api/posts/{postId}/good で既にグッド済みの場合は409が返る")
+    void good_alreadyGooded_returns409() throws Exception {
         when(userService.getUserByEmail("me@example.com")).thenReturn(buildUser(1L));
         doThrow(new DuplicateRecordException("すでにグッド済みです"))
                 .when(goodService).addGood(1L, 5L);
 
-        mockMvc.perform(post("/posts/5/good")
+        mockMvc.perform(post("/api/posts/5/good")
                         .with(SecurityMockMvcRequestPostProcessors.user("me@example.com").roles("USER"))
                         .with(csrf()))
-                .andExpect(status().is3xxRedirection())
-                .andExpect(redirectedUrl("/posts/5"))
-                .andExpect(flash().attribute("warningMessage", "すでにグッド済みです"));
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DUPLICATE_RECORD"));
     }
 
     @Test
-    @DisplayName("未認証で POST /posts/{postId}/ungood にアクセスするとログインページへリダイレクトされる")
-    void ungood_unauthenticated_redirectsToLogin() throws Exception {
-        mockMvc.perform(post("/posts/5/ungood").with(csrf()))
-                .andExpect(status().is3xxRedirection())
-                .andExpect(redirectedUrlPattern("**/login"));
+    @DisplayName("未認証で POST /api/posts/{postId}/ungood にアクセスすると401が返る")
+    void ungood_unauthenticated_returns401() throws Exception {
+        mockMvc.perform(post("/api/posts/5/ungood").with(csrf()))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
-    @DisplayName("POST /posts/{postId}/ungood でグッド取り消しが実行されてリダイレクトされる")
-    void ungood_authenticated_redirectsToPost() throws Exception {
+    @DisplayName("POST /api/posts/{postId}/ungood でグッド取り消しが実行され204が返る")
+    void ungood_authenticated_returns204() throws Exception {
         when(userService.getUserByEmail("me@example.com")).thenReturn(buildUser(1L));
 
-        mockMvc.perform(post("/posts/5/ungood")
+        mockMvc.perform(post("/api/posts/5/ungood")
                         .with(SecurityMockMvcRequestPostProcessors.user("me@example.com").roles("USER"))
                         .with(csrf()))
-                .andExpect(status().is3xxRedirection())
-                .andExpect(redirectedUrl("/posts/5"));
+                .andExpect(status().isNoContent());
 
         verify(goodService).removeGood(1L, 5L);
     }
 
     @Test
-    @DisplayName("未認証で POST /posts/{postId}/good にアクセスするとログインページへリダイレクトされる")
-    void good_unauthenticated_redirectsToLogin() throws Exception {
-        mockMvc.perform(post("/posts/5/good").with(csrf()))
-                .andExpect(status().is3xxRedirection())
-                .andExpect(redirectedUrlPattern("**/login"));
+    @DisplayName("未認証で POST /api/posts/{postId}/good にアクセスすると401が返る")
+    void good_unauthenticated_returns401() throws Exception {
+        mockMvc.perform(post("/api/posts/5/good").with(csrf()))
+                .andExpect(status().isUnauthorized());
     }
 }
