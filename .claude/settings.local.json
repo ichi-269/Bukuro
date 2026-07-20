@@ -68,7 +68,8 @@
       "Bash(docker rmi *)",
       "Bash(npm ci *)",
       "Bash(npm ls *)",
-      "Bash(node -e \"console.log\\(require\\('./node_modules/vite/package.json'\\).optionalDependencies || require\\('./node_modules/vite/package.json'\\).dependencies\\)\")"
+      "Bash(node -e \"console.log\\(require\\('./node_modules/vite/package.json'\\).optionalDependencies || require\\('./node_modules/vite/package.json'\\).dependencies\\)\")",
+      "Bash(python3 -c \"import yaml; yaml.safe_load\\(open\\('.github/workflows/deploy.yml'\\)\\); print\\('YAML OK'\\)\")"
     ],
     "additionalDirectories": [
       "/tmp",
