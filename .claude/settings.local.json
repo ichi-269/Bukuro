@@ -65,7 +65,10 @@
       "Bash(echo \"EXIT_CODE=$?\")",
       "Bash(echo \"EXIT=$?\")",
       "Bash(git add *)",
-      "Bash(docker rmi *)"
+      "Bash(docker rmi *)",
+      "Bash(npm ci *)",
+      "Bash(npm ls *)",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/vite/package.json'\\).optionalDependencies || require\\('./node_modules/vite/package.json'\\).dependencies\\)\")"
     ],
     "additionalDirectories": [
       "/tmp",
