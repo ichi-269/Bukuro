@@ -10,6 +10,10 @@ src/main/resources/static/
 # ローカル設定（DB接続情報等）
 src/main/resources/application-local.properties
 
+# 本番デプロイ用の機密情報・生成物（GitHub Actionsがsrc/main/resources/db/schema.sqlから都度生成）
+deploy/.env
+deploy/schema.sql
+
 # IDE
 .idea/
 *.iml

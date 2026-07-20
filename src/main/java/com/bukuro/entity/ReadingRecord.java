@@ -32,7 +32,7 @@ public class ReadingRecord {
     @Column(nullable = false)
     private ReadingStatus status;
 
-    @Column
+    @Column(columnDefinition = "TINYINT")
     private Integer rating;
 
     @Column(name = "started_at")

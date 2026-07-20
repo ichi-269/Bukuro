@@ -105,13 +105,14 @@ npm run type-check   # 型チェック（vue-tsc）
 
 ## 本番デプロイ
 
-Render / Railway へのデプロイを想定しています。以下の環境変数をデプロイ先のダッシュボードで設定してください。
+AWS EC2インスタンス1台に、アプリ(Spring Boot)・DB(MySQL)・リバースプロキシ(Caddy)をDocker Composeで同居させる構成でデプロイします。インスタンスは基本停止しておき、必要な時だけ起動する運用です。
 
-| 環境変数 | 説明 |
-|----------|------|
-| `DB_URL` | JDBC 接続 URL（例: `jdbc:mysql://host:3306/bukuro`） |
-| `DB_USERNAME` | DB ユーザー名 |
-| `DB_PASSWORD` | DB パスワード |
+- **初回のAWSリソース構築**: [`deploy/aws-setup-commands.md`](deploy/aws-setup-commands.md) に記載のコマンドを、デプロイ先のAWSアカウントで一度だけ実行してください（IAM/ECR/S3/EC2などを作成します）。
+- **自動デプロイ**: `main` ブランチへのpushをトリガーに [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) が実行され、テスト → Dockerイメージビルド → ECR push → EC2への反映まで自動で行われます。EC2が停止中でも自動的に起動してデプロイされ、完了後も稼働状態が維持されます。
+- **本番環境の設定**: EC2上の `/opt/bukuro/.env`(Git管理外)で管理します。初回セットアップ時にAWS SSM Session Manager経由で手動作成してください(`deploy/.env.example` を参照)。コードや配布物には一切ハードコードしません。
+- **アクセス方法**: 独自ドメインは用意していないため、EC2起動後にパブリックIPを確認してアクセスします。
+
+詳細な設計は [`docs/architecture.md`](docs/architecture.md) の「システム構成(デプロイ構成)」を参照してください。
 
 `application.properties` はこれらの環境変数を参照する設定になっています。
 
