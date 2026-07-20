@@ -108,6 +108,7 @@
 **新たに必要になったタスク**:
 - ローカルでの`docker compose up`検証中に、MySQL 8のデフォルト認証方式(`caching_sha2_password`)でJDBC接続が`Public Key Retrieval is not allowed`エラーになることが判明し、`docker-compose.prod.yml`のJDBC URLに`allowPublicKeyRetrieval=true`を追加した
 - 同じくローカル検証中に、`ReadingRecord.rating`(JPAエンティティ)と`schema.sql`の列型不一致(`INTEGER` vs `TINYINT`)により`ddl-auto=validate`(prod想定)で起動失敗する既存バグを発見し、エンティティに`@Column(columnDefinition = "TINYINT")`を追加して解消した。ローカル開発では`ddl-auto=update`を使っており今まで表面化していなかった
+- 実際にユーザーがpushしてCIを走らせたところ、`test`ジョブの`npm ci`が`EUSAGE`(`Missing: @emnapi/core@1.11.2 from lock file`)で失敗した。Vite 8(Rolldown)のWASMフォールバック用optionalDependency(`@emnapi/core`/`@emnapi/runtime`)が、Node/npmのパッチバージョン差によって解決結果が微妙に変わる不安定な依存関係だったことが原因。`frontend/package-lock.json`をLinux(Docker `node:24`イメージ)で再生成しても再発したため、根本対応として`.github/workflows/deploy.yml`の`node-version`を`"24"`(浮動)から`"24.11.0"`(pom.xmlのfrontend-maven-pluginと同一)に固定し、CIステップも`npm ci`から`npm install --no-audit --no-fund`に変更した(`ci`の完全一致要求ではなく`install`の柔軟な解決に切り替えることで、この種のoptionalDependency差異を吸収できることをDocker上で検証済み)
 
 **技術的理由でスキップしたタスク**（該当する場合のみ）:
 - フェーズ8の各タスク
