@@ -49,10 +49,27 @@
       "Bash(node -e ' *)",
       "Bash(kill 46858)",
       "Bash(pkill -f \"spring-boot:run\")",
-      "Bash(mysql -u root -pms_Nac41c44 bukuro_dev -e \"DELETE FROM users WHERE username LIKE 'mdtest%';\")"
+      "Bash(mysql -u root -pms_Nac41c44 bukuro_dev -e \"DELETE FROM users WHERE username LIKE 'mdtest%';\")",
+      "Bash(mkdir -p /Users/ichinohiroto/git/Bukuro/.steering/20260720-aws-ec2-deploy && ls /Users/ichinohiroto/git/Bukuro/.steering/20260720-aws-ec2-deploy)",
+      "Bash(aws --version)",
+      "Bash(aws sts *)",
+      "Bash(docker --version)",
+      "Bash(docker build *)",
+      "Bash(open -a Docker)",
+      "Bash(docker info *)",
+      "Bash(docker compose *)",
+      "Bash(docker tag *)",
+      "Bash(bash -n /Users/ichinohiroto/git/Bukuro/deploy/deploy.sh)",
+      "Bash(bash -n /Users/ichinohiroto/git/Bukuro/deploy/ec2-init.sh)",
+      "Bash(mvn -q verify)",
+      "Bash(echo \"EXIT_CODE=$?\")",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(git add *)",
+      "Bash(docker rmi *)"
     ],
     "additionalDirectories": [
-      "/tmp"
+      "/tmp",
+      "/Users/ichinohiroto/git/Bukuro/.steering"
     ]
   }
 }

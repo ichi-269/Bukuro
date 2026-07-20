@@ -97,26 +97,31 @@ SPA(Single Page Application)構成。バックエンドはJSON APIのみを提�
 ```mermaid
 graph TB
     Browser[ユーザー ブラウザ<br/>Vue 3 SPA]
-    App[Spring Boot アプリ<br/>Render / Railway<br/>REST API + 静的ファイル配信]
-    DB[(MySQL<br/>Render / Railway DB)]
+    Caddy[Caddy<br/>リバースプロキシ]
+    App[Spring Boot アプリ<br/>Dockerコンテナ<br/>REST API + 静的ファイル配信]
+    DB[(MySQL<br/>Dockerコンテナ)]
     OpenBD[OpenBD / NDL API<br/>外部サービス]
 
-    Browser -->|HTTPS 初回: index.html+assets 配信| App
-    Browser -->|HTTPS /api/** JSON| App
+    Browser -->|HTTP 初回: index.html+assets 配信| Caddy
+    Browser -->|HTTP /api/** JSON| Caddy
+    Caddy --> App
     App -->|JDBC| DB
     App -->|HTTPS| OpenBD
 ```
 
-Vue SPAのビルド成果物(index.html・JS・CSS)はSpring Bootアプリ自身が静的ファイルとして配信するため、フロントエンド専用のCDNやホスティングは不要（単一サービスデプロイ構成を維持）。
+Vue SPAのビルド成果物(index.html・JS・CSS)はSpring Bootアプリ自身が静的ファイルとして配信するため、フロントエンド専用のCDNやホスティングは不要（単一サービスデプロイ構成を維持）。App・DB・CaddyはすべてEC2インスタンス1台の上でDocker Composeにより同居させる（詳細な構築手順は`deploy/aws-setup-commands.md`、コンポーネント定義は`deploy/docker-compose.prod.yml`を参照）。
 
-### デプロイ先: Render または Railway
+### デプロイ先: AWS EC2（単一インスタンス構成）
 
 | 項目 | 内容 |
 |------|------|
-| アプリサーバー | Render Web Service または Railway App |
-| データベース | Railway MySQL または Render MySQL (MySQL 8.x) |
-| 環境変数管理 | Render/Railway のダッシュボードで設定（コードにハードコードしない） |
-| デプロイ方法 | GitHubリポジトリと連携した自動デプロイ（main push時） |
+| インスタンス | EC2 1台（`t4g.small`, Amazon Linux 2023 / arm64）。アプリ・DB・リバースプロキシをDocker Composeで同居させる |
+| アプリサーバー | Spring Bootコンテナ（ECRから取得したイメージ）。Caddyコンテナがリバースプロキシとして`:80`で待ち受ける |
+| データベース | MySQL 8.0コンテナ。データはEBSボリューム上のDocker名前付きボリュームに永続化（インスタンスの`stop`ではデータは消えない） |
+| 運用方針 | インスタンスは基本停止しておき、必要な時のみ起動する。起動時はsystemd（`bukuro-app.service`）が自動でコンテナ群を復帰させるため、SSHでの手動操作は不要 |
+| アクセス方法 | 独自ドメイン・Elastic IPは用意せず、起動の都度パブリックIPを確認してアクセスする（将来ドメインを導入すればCaddyの設定変更のみで自動HTTPS化可能） |
+| 環境変数管理 | EC2上の`/opt/bukuro/.env`（Git管理外、初回のみSSM Session Managerで手動作成）で管理。コードにハードコードしない |
+| デプロイ方法 | GitHub Actions（OIDCフェデレーション）からAWS SSM Send-Commandを使い、SSH鍵を使わずにデプロイを実行（main push時、インスタンス停止中でも自動起動してデプロイする） |
 
 ---
 
@@ -132,9 +137,9 @@ Vue SPAのビルド成果物(index.html・JS・CSS)はSpring Bootアプリ自身
 
 ### バックアップ戦略
 
-- **方式**: Render / Railway のマネージドDBの自動バックアップ機能を利用
-- **頻度**: 日次（PaaSのデフォルト設定に準拠）
-- **復元方法**: PaaSのダッシュボードまたはCLIからポイントインタイムリストア
+- **方式**: EBSボリュームのスナップショット（EC2インスタンスの`stop`/`start`ではEBSは消えないため、通常運用ではこれで十分。誤操作等に備えた保険としてスナップショットを取得する）
+- **頻度**: 手動、または必要に応じてAWS Backupで定期スナップショットを設定（本フェーズのスコープ外。将来の拡張候補）
+- **復元方法**: スナップショットから新しいEBSボリュームを作成し、EC2にアタッチして復元
 
 ---
 
@@ -154,11 +159,11 @@ Vue SPAのビルド成果物(index.html・JS・CSS)はSpring Bootアプリ自身
 - 記事一覧・本棚一覧: 20件/ページ（Spring Data PageableにてLIMIT/OFFSET）
 - 全公開記事フィード: 20件/ページ
 
-### リソース使用量（Renderフリープラン基準）
+### リソース使用量（EC2 `t4g.small` 基準: 2 vCPU / 2GBメモリ）
 
 | リソース | 上限 | 対応方針 |
 |---------|------|---------|
-| メモリ | 512MB | Spring Boot起動時のヒープを256MB以内に抑制 |
+| メモリ | 2GB（アプリ・MySQL・Caddyで共有） | Spring Boot起動時のヒープを256MB以内に抑制。MySQLの`innodb_buffer_pool_size`も抑制。1GBのswapファイルをOOM対策として用意 |
 | 同時接続 | 100リクエスト/秒以下 | 初期フェーズは100ユーザー想定のため問題なし |
 
 ---
@@ -215,8 +220,8 @@ application.properties（バージョン管理に含める）
 application-local.properties（.gitignoreで除外）
   → ローカル開発用の実際の接続情報
 
-環境変数（Render / Railway ダッシュボード）
-  → 本番環境の DB_URL, DB_USERNAME, DB_PASSWORD 等
+EC2上の /opt/bukuro/.env（Git管理外。初回のみSSM Session Managerで手動作成し、以降デプロイスクリプトは書き換えない）
+  → 本番環境の DB_ROOT_PASSWORD, DB_USERNAME, DB_PASSWORD, ECR_REPOSITORY 等
 ```
 
 ---
@@ -276,65 +281,30 @@ application-local.properties（.gitignoreで除外）
 
 ## CI/CDパイプライン
 
-### GitHub Actions（CIパイプライン）
+### GitHub Actions（`.github/workflows/deploy.yml`）
 
-```yaml
-# .github/workflows/ci.yml
-name: CI
+`main`ブランチへのpushをトリガーに、テスト・ビルド・AWSへのデプロイまでを1つのワークフローで実行する。3つのジョブで構成される（`needs`により直列化。前段が失敗すれば後段は実行されない）。
 
-on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ develop ]
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: bukuro_test
-        ports:
-          - 3306:3306
-        options: --health-cmd="mysqladmin ping" --health-interval=10s
-
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-          cache: maven
-
-      - name: Run tests with coverage
-        run: mvn verify
-        env:
-          DB_URL: jdbc:mysql://localhost:3306/bukuro_test
-          DB_USERNAME: root
-          DB_PASSWORD: root
-
-      - name: Upload coverage report
-        uses: actions/upload-artifact@v4
-        with:
-          name: jacoco-report
-          path: target/site/jacoco/
 ```
+test ─→ build-and-push ─→ deploy
+```
+
+| ジョブ | 内容 |
+|---------|------|
+| `test` | `mvn verify`（`frontend-maven-plugin`によるフロントエンドビルド + JUnit 5/Mockito + TestContainers統合テスト + JaCoCo）に加え、`frontend/`配下で`npm run test`（Vitest）を個別実行 |
+| `build-and-push` | GitHub Actions OIDCフェデレーションでAWS IAMロールをAssumeし、Dockerイメージをビルド（EC2がarm64のためQEMU + Buildxでクロスビルド）してAmazon ECRにpush。`deploy/`配下の実行時設定一式（`docker-compose.prod.yml` / `Caddyfile` / `deploy.sh`）と`src/main/resources/db/schema.sql`をS3にsync |
+| `deploy` | EC2インスタンスの状態を確認し、停止中なら`start-instances`で起動してSSM Agentのオンライン化を待機。その後AWS SSM Send-Command（`AWS-RunShellScript`）でEC2上の`deploy.sh`を実行し、最新イメージのpullとコンテナ再起動を行う。デプロイ完了後もインスタンスは稼働状態のまま維持する |
 
 ### パイプライン方針
 
-| ステップ | 内容 |
+| 項目 | 内容 |
 |---------|------|
 | フロントエンドビルド | `mvn verify`の`generate-resources`フェーズで`frontend-maven-plugin`がNode.js/npmを自動取得し`npm run build`（vue-tsc型チェック含む）を実行。成果物は`src/main/resources/static`に出力され、以降のバックエンドビルドに組み込まれる |
-| ビルド | `mvn verify`（ユニットテスト + 統合テスト + JaCoCoカバレッジ） |
-| テスト | JUnit 5 + Mockito（ユニット） / TestContainers → GitHub Actions MySQL service（統合） / Vitest + Vue Test Utils（フロントエンドユニット、`frontend/`配下で`npm run test`を個別実行） |
-| カバレッジ | JaCoCoレポートをartifactとして保存。Serviceレイヤー80%以上を目標 |
-| デプロイ | `main` ブランチへのマージ時にRender/Railwayが自動デプロイ |
-
-**注記**: 現時点で`.github/workflows/`は存在しない（過去にユーザーが意図的に削除）。上記CI設定例は今後CIを再導入する際の参考として維持している。再導入時は`npm run test`をCIステップに明示的に追加することを推奨する（`mvn verify`は`npm run build`のみを実行し、Vitestは含まない）。
+| テスト | JUnit 5 + Mockito（ユニット） / TestContainers（統合） / Vitest + Vue Test Utils（フロントエンドユニット） |
+| カバレッジ | JaCoCoレポートを`mvn verify`実行時に生成。Serviceレイヤー80%以上を目標 |
+| 認証方式 | GitHub Actions OIDC（`aws-actions/configure-aws-credentials`）でAWS IAMロールをAssumeするため、長期のAWSアクセスキーをGitHub Secretsに保存しない |
+| デプロイ手段 | AWS SSM Send-Commandを使用し、EC2への到達はSSMのみに限定（SSHポート22番は開放しない） |
+| AWSリソースの構築 | GitHub Actionsからは行わない。`deploy/aws-setup-commands.md`のコマンドをユーザーが事前に一度だけ実行してIAM/ECR/S3/EC2等を用意しておく |
 
 ---
 

@@ -1,0 +1,10 @@
+:80 {
+	reverse_proxy app:8080
+}
+
+# ドメインを取得したら、上記の `:80` を実際のドメイン名に差し替えるだけで
+# Let's Encryptによる自動HTTPS化が有効になります。
+#
+# example.com {
+# 	reverse_proxy app:8080
+# }
