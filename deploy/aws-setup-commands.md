@@ -108,9 +108,18 @@ cat > /tmp/gha-permissions-policy.json <<EOF
       "Resource": "arn:aws:ecr:${AWS_REGION}:${AWS_ACCOUNT_ID}:repository/${ECR_REPO_NAME}"
     },
     {
+      "Sid": "S3ListBucket",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::${S3_BUCKET}",
+      "Condition": {
+        "StringLike": { "s3:prefix": "deploy/*" }
+      }
+    },
+    {
       "Sid": "S3DeployUpload",
       "Effect": "Allow",
-      "Action": ["s3:PutObject", "s3:GetObject"],
+      "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
       "Resource": "arn:aws:s3:::${S3_BUCKET}/deploy/*"
     },
     {
@@ -129,16 +138,19 @@ cat > /tmp/gha-permissions-policy.json <<EOF
       }
     },
     {
-      "Sid": "SsmSendCommand",
+      "Sid": "SsmSendCommandInstance",
       "Effect": "Allow",
       "Action": "ssm:SendCommand",
-      "Resource": [
-        "arn:aws:ec2:${AWS_REGION}:${AWS_ACCOUNT_ID}:instance/*",
-        "arn:aws:ssm:${AWS_REGION}::document/AWS-RunShellScript"
-      ],
+      "Resource": "arn:aws:ec2:${AWS_REGION}:${AWS_ACCOUNT_ID}:instance/*",
       "Condition": {
-        "StringEquals": { "ec2:ResourceTag/Project": "${PROJECT_TAG}" }
+        "StringEquals": { "ssm:resourceTag/Project": "${PROJECT_TAG}" }
       }
+    },
+    {
+      "Sid": "SsmSendCommandDocument",
+      "Effect": "Allow",
+      "Action": "ssm:SendCommand",
+      "Resource": "arn:aws:ssm:${AWS_REGION}::document/AWS-RunShellScript"
     },
     {
       "Sid": "SsmObserve",
